@@ -1,0 +1,98 @@
+##########################################################
+# preliminary step: download CD-HIT
+# https://github.com/weizhongli/cdhit/wiki CD-HIT helps to significantly
+# reduce the computational and manual efforts in many sequence analysis tasks
+# and aids in understanding the data structure and correct the bias within a dataset
+cd bin
+wget https://github.com/weizhongli/cdhit/releases/download/V4.6.8/cd-hit-v4.6.8-2017-1208-source.tar.gz
+tar xvf cd-hit-v4.6.8-2017-1208-source.tar.gz --gunzip
+cd cd-hit-v4.6.8-2017-1208
+make
+cd cd-hit-auxtools
+make
+# to run cdhit to cluster nucleotide sequences:
+./bin/cd-hit-v4.6.8-2017-1208/cd-hit-est
+
+# download magic BLAST
+# ftp://ftp.ncbi.nlm.nih.gov/blast/executables/magicblast/LATEST
+# ncbi-magicblast-1.4.0-x64-linux.tar.gz
+cd bin
+wget ftp://ftp.ncbi.nlm.nih.gov/blast/executables/magicblast/LATEST/ncbi-magicblast-1.4.0-x64-linux.tar.gz
+tar xvf ncbi-magicblast-1.4.0-x64-linux.tar.gz --gunzip
+cd ncbi-magicblast-1.4.0
+# to use it
+/data/home/btx077/bin/ncbi-magicblast-1.4.0/bin/makeblastdb
+
+##########################################################
+# step 1: obtain COX1 sequences from the BOLD database http://v3.boldsystems.org/
+# from taxonomy, I clicked through taxonomy levels to get to pheidole
+http://v3.boldsystems.org/index.php/Taxbrowser_Taxonpage?taxid=2041
+# Specimens with Sequences: 11,298
+# access public data > click on the fasta sequences button to download on computer
+# upload it to cluster by click and point method / apocritaMount
+
+
+
+##########################################################
+# step 2: Depending on the number of sequences you download,
+# you may need to reduce redundancy by running CD-Hit to collapse redundant sequences
+# (I would set this as an overlap of 0.97%).
+mkdir 2019-01-23-species-identification
+mkdir input
+cd input
+mkdir 2019-01-23-raw-bold-sequences
+cd 2019-01-23-raw-bold-sequences
+# how many sequences ? 6407
+grep -E ">" 2019-01-23-raw-bold-sequences/phei_fasta.fas | wc -l
+mkdir result
+cd result
+mkdir 2019-01-23-reduce_redundancy
+cd result/2019-01-23-reduce_redundancy
+mkdir input
+cd input
+ln -s ../../../input/2019-01-23-raw-bold-sequences/phei_fasta.fas
+cd ..
+# run the command to obtain a fasta file of representative sequences
+# some sequences that are highly similar will be removed from the output
+# To check which sequences went missing, check out the text file of list of clusters
+# sequence identity threshold 97
+#  word size 10 (as per manual input)
+# length of description in .clstr file set to 0, it takes the fasta defline and stops at first space
+# memory limit 16000MB
+# number of threads 20
+tmux new-session -s redundancy
+~/bin/cd-hit-v4.6.8-2017-1208/cd-hit-est -i input/phei_fasta.fas -o result/pheidole
+                                         -c 0.97 -n 10 -d 0 -M 16000 -T 20
+# under one minute
+
+##########################################################
+# Step 3: blast raw Illumina sequences against COX1 sequences
+# I was using NCBI Magic-Blast to BLAST raw Illumina sequences against COX1
+# sequences obtained from the BOLD database. Create an index using magic blast
+# https://github.com/wurmlab/comp_and_pop_bombus_genomes/blob/master/01_species_identification/run_magic_blast.sh
+# It complains if your FASTA headers (the BOLD database headers can be verbose)
+# are long so you may need to do some editing beforehand with 'sed' or 'tr'.
+mkdir 2019-01-23-magic_blast
+cd 2019-01-23-magic_blast
+mkdir input
+cd input
+ln -s ../../../input/2019-01-23-magic_blast/reference
+ln -s ~/db/genomic/reads/Pheidole_pallidula/2018-05-19-Ppal_115workers_mono_poly_europe_hiseq4000_3lanes/renamed/raw_reads/*.fastq.gz .
+cd ..
+mkdir result
+# copy Joe's script and updated the path to tool
+run_magic_blast_em.sh
+# takes 5 minutes for each sample
+./run_magic_blast_em.sh input/reference input/A01-P.R1.fastq.gz input/A01-P.R2.fastq.gz
+
+
+# the research did not work the first time around: first hit was an unknown pheidole sp.
+# I tried to search for "pallidula" in the reference, but it did not exist
+# so I copied the Moreau 2008 coi sequence from ncbi (https://www.ncbi.nlm.nih.gov/nuccore/EF518381.1?report=fasta) into the reference, and I will try the whole analysis again
+
+# cool, the first hit is EF518381.1 = Pheidole pallidula for A01-P
+
+# run this analysis for all samples
+./run_magic_blast_for_all.sh
+
+# aim: extracting top matches i.e. 100% sequence match and highest bitscore

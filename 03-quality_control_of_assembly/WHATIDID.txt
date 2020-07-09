@@ -1,0 +1,172 @@
+#!/bin/sh
+
+###############################################################################
+### Aim: ###
+
+# Qualify the new polished assembly (MinIONflye)
+# Priyam used flye on 17x Pheidole minion reads
+# 287 Mb assembly with 452 Kb N50 and 2.9 Mb longest contig
+# from ant single-copy ortholog genes, are they bridging two MinION sequences?
+
+
+###############################################################################
+### Project preparation ###
+
+module load seqtk
+module load blast+
+
+mkdir input
+cd input
+ln -s ~/db/genomic/Pheidole_pallidula/2019-03-05-Ppal_E/Ppal_E.fasta
+# obtain protein sequences for all genic regions from Solenopsis
+# from Ensembl gff version 41
+ln -s ~/db/genomic/S_invicta/2018-Sinv_gnG_ensembl41/Solenopsis_invicta.Si_gnG.pep.all.fa.gz solenopsis-genic-regions.fa.gz
+cd ..
+
+mkdir result
+
+mkdir -p ~/monthly_autoScratch/2019-03-06-minion_flye_QC
+ln -s ~/monthly_autoScratch/2019-03-06-minion_flye_QC tmp
+
+
+###############################################################################
+### Analysis ###
+
+# step 1: from orthodb, get Formicidae gene database for BUSCO (tab format)
+wget 'https://www.orthodb.org/tab?limit=5000&universal=1&singlecopy=1&level=36668&species=36668' -O tmp/odb10_formicidae_universal1_singlecopy1.tab
+
+
+
+
+# step 2: pick up id genes (column 7: pub_gene_id)
+cat tmp/odb10_formicidae_universal1_singlecopy1.tab | \
+cut -f7 > all-scg-names.lst
+
+
+
+
+
+# step 3: obtain sequence names for those genes in Solenopsis reference
+gzip -dc input/solenopsis-genic-regions.fa.gz | \
+grep -f all-scg-names.lst > tmp/sol-scg-names.lst
+
+# remove ">"
+sed 's/>//g' tmp/sol-scg-names.lst > tmp/sol-scg-seq-names.lst
+
+# obtain Solenopsis protein sequences for those genes
+gzip -dc input/solenopsis-genic-regions.fa.gz | \
+seqtk subseq - tmp/sol-scg-seq-names.lst > tmp/sol-scg.fa
+
+# 4247 sequences
+grep ">" tmp/sol-scg.fa | wc -l
+
+
+
+
+# step 4: tblastn against MinION reference
+# blast those genes to the assembly
+# query is those Solenopsis genes (proteins)
+# database is MinION-flye assembly (nucleotides)
+# make the database
+makeblastdb -dbtype nucl \
+            -title MinION-flye \
+            -in input/Ppal_E.fasta \
+            -out tmp/MinION-flye
+
+# identify database sequences encoding proteins similar to the query (protein)
+# Blast hits with E-value < 0.01 : good hit for homology matches
+# output 6 plus qlen
+# qcovs means Query Coverage Per Subject
+
+tblastn -query tmp/sol-scg.fa \
+        -out tmp/MinION-flye-solenopsis-genes-output-blast.txt \
+        -evalue 1e-10 \
+        -outfmt "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore qlen qcovs" \
+        -db tmp/MinION-flye
+
+# copy in result
+cp tmp/MinION-flye-solenopsis-genes-output-blast.txt result/.
+
+
+
+
+# step 5: are there some genes spanning the extremes of two minion sequences? If so, put the two sequences together.
+summary_stats.Rmd
+
+
+# step 6: calculate the length of each contig in MinION
+seqtk comp input/Ppal_E.fasta | cut -f 1,2 > Ppal_E.contig.length
+
+
+# July 2019: remove potential contigs that are not ant
+
+# step 0: update the tmp link (autoscratch does not exist anymore)
+unlink tmp
+mkdir -p ~/scratch/2019-03-06-minion_flye_QC
+ln -s ~/scratch/2019-03-06-minion_flye_QC tmp
+
+# download latest version of diamond
+cd software
+wget http://github.com/bbuchfink/diamond/releases/download/v0.9.24/diamond-linux64.tar.gz
+tar xzf diamond-linux64.tar.gz
+mv diamond ~/bin/.
+
+# step 1: download uniref50 (protein sequences with 50% identity with uniref100, and 80% overlap)
+# If some of the contigs are bacterial, GC content will be so different that 50% identity will be enough to detect them.
+
+cd input
+wget ftp://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref50/uniref50.fasta.gz
+cd ..
+
+# step 2: make database (diamond version )
+# issue of space use!
+mv uniref50.fasta.gz ../tmp
+# download in tmp mapping file (taxonmap) and node file (taxonnodes)
+cd tmp
+wget ftp://ftp.ncbi.nlm.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz
+wget ftp://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdmp.zip
+unzip taxdmp.zip
+# download
+wget ftp://ftp.ncbi.nlm.nih.gov/pub/taxonomy/gi_taxid_prot.dmp.gz
+cd ..
+diamond makedb --in tmp/uniref50.fasta.gz -d tmp/uniref50taxon --taxonmap tmp/prot.accession2taxid.gz --taxonnodes tmp/nodes.dmp --threads 36
+
+# step 3: align
+# evalue is set to 0.001
+# max target seqs is set to 25
+diamond blastx -d tmp/uniref50 -q input/Ppal_E.fasta --threads 16 --outfmt 6 -o tmp/Ppal_E.diamond
+
+diamond blastx -d tmp/uniref50taxon -q input/Ppal_E.fasta --threads 16 --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids -o tmp/Ppal_E.diamond.staxids
+
+diamond blastx -d tmp/uniref50taxon -q input/Ppal_E.fasta --threads 16 --outfmt 102 -o tmp/Ppal_E.diamond.taxonomy
+
+# then filter each contig to lowest e-value, bitscore, pident, length
+# Catherine Okyyboyejo gave me three scripts to work with
+# Script 1: download the representative fasta file and extract the header
+chmod +x lookup_unirefs.sh
+tmux new
+module load parallel
+./lookup_unirefs.sh tmp/Ppal_E.diamond  tmp/Ppal_E.diamond.headers
+
+
+# Script 2: add taxonomic rank in the output of Diamond
+module load R
+Rscript uniref_fasta_headers_to_taxa.Rmd tmp/Ppal_E.diamond.headers
+
+
+
+###############################################################################
+### Analysis 2 ###
+
+module load entrez
+
+# Obtain N50 of all Hymenoptera genomes txid7399
+esearch -db assembly -query 'txid7399[organism:exp]' \
+  | esummary \
+  | xtract -pattern DocumentSummary -element AssemblyAccession,AssemblyName,SpeciesTaxid,Organism,ContigN50,ScaffoldN50 > hymenoptera-N50-stats
+
+
+# obtain same information but with the date as well
+esearch -db assembly -query 'txid7399[organism:exp]' \
+  | esummary \
+  | xtract -pattern DocumentSummary -element AssemblyAccession,AssemblyName,SpeciesTaxid,Organism,ContigN50,Scaffold  N50 > hymenoptera-N50-date-stats

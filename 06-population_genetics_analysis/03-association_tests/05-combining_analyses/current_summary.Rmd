@@ -1,0 +1,2992 @@
+---
+title: 'Pheidole GWAS: no indication of social supergene'
+author: "EmelineFavreau"
+date: "30 May 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Data
+109 diploid workers, each representative of one colony, from one of the following regions:
+
+ - Bruniquel (France): 69 samples, 16 monogynous and 53 polygynous
+
+ - Vigliano (Italy): 23 samples, 16 monogynous and 7 polygynous
+
+ - Pyrenees: 16 samples, 5 monogynous and 11 polygynous
+
+Each sample has an estimated genome coverage of 6x.
+
+# Assembly
+The assembly was created from MinION sequencing of a mix of workers and males from 2 monogynous colonies from France and Italy.
+Ppal_gnE assembly is 287 Mb long, with an N50 length of 452kb and near-complete set of single-copy orthologous genes (C:98.8%[S:98.1%,D:0.7%],F:0.4%,M:0.8%,n:1658). 
+There are ~1500 contigs.
+
+# Variant Calling
+We performed a reference-based variant calling using PPal_gnE and 115 sets of Illumina raw reads. 
+We first mapped raw reads of each sample to the assembly using Bowtie2 version 2.3.4 (local alignment), obtaining 115 BAM files with alignments private to each sample.
+We then used FreeBayes version 1.2.0 (--use-best-n-alleles 2) to call the variants, obtaining one vcf file. 
+We filtered the variant file with Bcftools 1.8, Tabix 0.2.5 and VCFtools 0.1.15. 
+Briefly, we sorted and indexed the VCF file, we kept biallelic SNPs, with a minimum quality phred of 30 and minimum sample support of 75% (--remove-indels --minQ 30 --min-alleles 2 --max-alleles 2). 
+Six samples were removed from the analysis due to being outliers as seen on PCA plot. 
+We used BEDtools intersect to keep variants only in the coding regions. 
+We filtered out variants that were absent from at least one population (Bruniquel, Italy, Pyrenees).
+We filtered out variants that were monomorphic in any population (Bruniquel, Italy, Pyrenees).
+We did not remove SNPs in linkage disequilibrium.
+
+# Association Analysis
+We performed a Fisher test of allele count for each SNP between monogynous samples and polygynous samples.
+First for the whole dataset, and then for each of the two main populations (France and Italy).
+We adjusted the p-values for multiple comparisons (Benjamini & Hochberg).
+
+
+```{r import data and libraries, eval = TRUE, echo = FALSE, include = FALSE}
+
+## Power Analysis datasets
+
+
+# manhattan with 1 homhet fake SNP
+# import fakesnp with whole data (Fisher)
+plink_output_with_fake_snp <- read.csv("2019-04-02-addfakesnp/result/2019-04-02-flye-Pheidole-genic-fakesnp-homhet.assoc.fisher", 
+                                       header = TRUE,
+                                       sep = "")
+
+# import fakesnp with whole data including misgenotyping 10% of samples (Fisher)
+plink_output_with_fake_snp_misgenotyping <- read.csv("2019-04-02-addfakesnp/result/2020-03-09-flye-Pheidole-genic-fakesnp-homhet-misgenotyping.assoc.fisher", 
+                                       header = TRUE,
+                                       sep = "")
+
+plink_output_with_fake_snp_misgenotyping_2nd <- read.csv("2019-04-02-addfakesnp/result/2020-03-24-flye-Pheidole-genic-fakesnp-homhet-misgenotyping.assoc.fisher", 
+                                       header = TRUE,
+                                       sep = "")
+
+# import file with scaffold name and length (including fake SNP)
+scaff_length_df_with_fake_snp <- read.table(file = "2019-04-02-addfakesnp/intersected.contig.length",
+                                            header = FALSE,
+                                            sep = "")
+
+# import 94 fake snps with whole data (Fisher) Solenopsis system
+plink_output_with_fake_snps <- read.csv("2019-04-02-addfakesnp/result/2019-08-23-flye-Pheidole-genic-fake-Solenopsis-snps.assoc.fisher",
+                                        header = TRUE,
+                                        sep = "")
+
+# import 138 fake snps with whole data (Fisher) Formica system
+plink_output_with_fake_snps_formica <- read.csv("2019-04-02-addfakesnp/result/2019-08-29-flye-Pheidole-genic-fake-Formica-snps.assoc.fisher",
+                                                header = TRUE,
+                                                sep = "")
+
+
+### Datasets with various input
+
+# CODING:
+# manhattan with no sig SNPs - whole dataset, maf > 0.05, coding only
+# import file with contig name and length
+contig_length_df_all      <- read.table(file = "2019-04-05-coding-only-NOmonomorphic-109samples-maf10percent/intersected.contig.length",
+                                        header = FALSE,
+                                        sep = "")
+
+# import output from Fisher
+plink_output_fisher_all   <- read.csv(file = "2019-04-26-coding-only-100support-109samples-maf10percent/result/2019-05-29-coding-only-100support.assoc.fisher",
+                                      header = TRUE,
+                                      sep = "")
+
+# manhattan with maf 0.2
+plink_output_fisher_all_maf20   <- read.csv(file = "2019-05-31_coding-only-100support-108samples-maf20percent/result/2019-05-30-coding-only-100support-maf20.assoc.fisher",
+                                            header = TRUE,
+                                            sep = "")
+
+
+# import output from Fisher Bruniquel
+plink_output_fisher_bruniquel <- read.csv("2019-04-03-coding-only-bruniquel-maf10percent/result/2019-04-03-flye-bruniquel-genic-noLD.assoc.fisher",
+                                          header = TRUE,
+                                          sep = "")
+
+# import file with contig name and length
+bruniquel_contig_length_df <- read.table(file = "2019-04-03-coding-only-bruniquel-maf10percent/intersected.contig.length",
+                                         header = FALSE,
+                                         sep = "")
+
+# import the snp matrix of the 20 contigs
+snp_matrix_bruniquel <- read.table("2019-04-03-coding-only-bruniquel-maf10percent/result/2019-08-15-twenty-sig-snp_matrix.txt",
+                                   header = FALSE,
+                                   stringsAsFactors = FALSE)
+
+# import the sample list vec
+sample_list_vec_bruniquel <- read.table("2019-04-03-coding-only-bruniquel-maf10percent/result/2019-08-15-twenty-sig-sample_names.txt",
+                                        header = FALSE,
+                                        stringsAsFactors = FALSE,
+                                        col.names = "sample_name")
+
+
+# import output from Fisher Italy
+contig_length_df_italy <- read.table(file = "2019-04-11-coding-only-italy-maf10percent/intersected.contig.length",
+                                     header = FALSE,
+                                     sep = "")
+
+# import output from Fisher
+plink_output_fisher_italy <- read.csv("2019-04-11-coding-only-italy-maf10percent/result/2019-04-11-flye-italy-genic.assoc.fisher",
+                                      header = TRUE,
+                                      sep = "")
+
+
+# import the pca file
+pheidole.eigenvec <- read.table("2019-04-26-coding-only-100support-109samples-maf10percent/result/2019-05-29-coding-only-100support-PCA.eigenvec",
+                                header = TRUE)
+
+# import population and gyny info
+pop <- read.csv("2019-04-26-coding-only-100support-109samples-maf10percent/S2_pheidole_pop_paper.csv",
+                header = TRUE,
+                stringsAsFactors = FALSE)
+
+
+# NON-CODING
+# import the fisher test for coding and non-coding regions (removing SNPs without 100% sample support, and SNPs that are monomorphic in at least one population)
+# maf is 0.05
+plink_output_fisher_coding_non_coding <- read.csv("2019-03-08-109samples-maf10percent/result/2019-06-03-108samples-maf005-NOmonomorphic-100support.assoc.fisher", header = TRUE, sep = "")
+
+# import length of contig
+coding_non_coding_length <- read.csv("2019-03-08-109samples-maf10percent/Ppal_E-contig-length-clean",
+                                     header = FALSE,
+                                     sep = "\t")
+
+# import the snp matrix of the 13 contigs
+snp_matrix <- read.table("2019-03-08-109samples-maf10percent/result/2019-08-12-thirteen-sig-snp_matrix.txt",
+                         header = FALSE,
+                         stringsAsFactors = FALSE)
+
+# import the sample list vec
+sample_list_vec <- read.table("2019-03-08-109samples-maf10percent/result/2019-08-12-thirteen-sig-sample_names.txt",
+                              header = FALSE)
+
+
+# import the fisher test for coding and non-coding regions 
+# removing SNPs without 75% sample support
+# and SNPs that are monomorphic in at least one population)
+# maf is 0.05
+plink_output_fisher_coding_non_coding75 <- read.csv("2019-03-08-109samples-maf10percent/result/2020-05-04-108samples-maf005-NOmonomorphic-75support.assoc.fisher", 
+                                                    header = TRUE,
+                                                    sep = "")
+
+
+## FST
+# import fst values for within-bruni and within-ita (locus)
+bruni_fst_df <- read.table("2019-03-14-bruniquel-maf10percent/result/2020-01-20-fst.fst",
+                           header = TRUE,
+                           stringsAsFactors = FALSE)
+
+ita_fst_df <- read.table("2019-03-14-italy-maf10percent/result/2020-01-20-fst.fst",
+                         header = TRUE,
+                         stringsAsFactors = FALSE)
+
+# import fst values for within-bruni and within-ita (5kb)
+bruni_5kb_fst_df <- read.table("2019-03-14-bruniquel-maf10percent/result/2020-01-22-bruniquel-m-vs-p-5kb.windowed.weir.fst",
+                           header = TRUE,
+                           stringsAsFactors = FALSE)
+
+ita_5kb_fst_df <- read.table("2019-03-14-italy-maf10percent/result/2020-01-22-italy-m-vs-p-5kb.windowed.weir.fst",
+                         header = TRUE,
+                         stringsAsFactors = FALSE)
+
+
+
+# load all the libraries
+# get libraries
+basic_libraries <- c("qqman",
+                     "ggplot2",
+                     "gridExtra",
+                     "LDheatmap",
+                     "calibrate",
+                     "dplyr",
+                     "ggrepel",
+                     "viridis")
+for (lib in basic_libraries) {
+        if (require(package = lib, character.only = TRUE)) {
+                print("Successful")
+        } else {
+                print("Installing")
+                install.packages(lib)
+                library(lib, character.only = TRUE )
+        }
+}
+```
+
+
+```{r create my own manhattan function, eval = TRUE, echo = FALSE}
+# create my own manhattan function
+em_manhattan <- function(x, chr = "CHR", bp = "BP", p = "P", snp = "SNP", col = c("gray10", 
+    "gray60"), chrlabs = NULL, suggestiveline = -log10(1e-05), 
+    genomewideline = -log10(5e-08), highlight = NULL, logp = TRUE, 
+    annotatePval = NULL, annotateTop = TRUE, pointshape = 20, ...) 
+{
+    # checking the inputs are fine  
+    CHR = BP = P = index = NULL
+    if (!(chr %in% names(x))) 
+        stop(paste("Column", chr, "not found!"))
+    if (!(bp %in% names(x))) 
+        stop(paste("Column", bp, "not found!"))
+    if (!(p %in% names(x))) 
+        stop(paste("Column", p, "not found!"))
+    if (!(snp %in% names(x))) 
+        warning(paste("No SNP column found. OK unless you're trying to highlight."))
+    if (!is.numeric(x[[chr]])) 
+        stop(paste(chr, "column should be numeric. Do you have 'X', 'Y', 'MT', etc? If so change to numbers and try again."))
+    if (!is.numeric(x[[bp]])) 
+        stop(paste(bp, "column should be numeric."))
+    if (!is.numeric(x[[p]])) 
+        stop(paste(p, "column should be numeric."))
+    # create a dataframe with plotting info
+    d = data.frame(CHR = x[[chr]], BP = x[[bp]], P = x[[p]])
+    if (!is.null(x[[snp]])) 
+        d = transform(d, SNP = x[[snp]])
+    d <- subset(d, (is.numeric(CHR) & is.numeric(BP) & is.numeric(P)))
+    # order first by chromosome then by base pair
+    d <- d[order(d$CHR, d$BP), ]
+    # transform p value in log if command present
+    if (logp) {
+        d$logp <- -log10(d$P)
+    }
+    else {
+        d$logp <- d$P
+    }
+    d$pos = NA
+    d$index = NA
+    ind = 0
+    # add a individual rank for each SNP, following the order of CHR and BP
+    for (i in unique(d$CHR)) {
+        ind = ind + 1
+        d[d$CHR == i, ]$index = ind
+    }
+    nchr = length(unique(d$CHR))
+    # if there is only 1 chromosome
+    if (nchr == 1) {
+        d$pos = d$BP
+        ticks = floor(length(d$pos))/2 + 1
+        xlabel = paste("Chromosome", unique(d$CHR), "position")
+        labs = ticks
+    }
+    # if there are more than 1 chromosome
+    else {
+        lastbase = 0
+        ticks = NULL
+        for (i in unique(d$index)) {
+            if (i == 1) {
+                d[d$index == i, ]$pos = d[d$index == i, ]$BP
+            }
+            else {
+                # set a value for the last base
+                lastbase <- lastbase + tail(subset(d, index == 
+                  i - 1)$BP, 1)
+                # set a value for position
+                d[d$index == i, ]$pos <- d[d$index == i, ]$BP + 
+                  lastbase
+            }
+          # give specific values to the ticks in x axis
+            ticks = c(ticks, (min(d[d$index == i, ]$pos) + max(d[d$index == 
+                i, ]$pos))/2 + 1)
+        }
+        xlabel = "Chromosome"
+        labs <- unique(d$CHR)
+    }
+    # set the x axis limits
+    xmax = ceiling(max(d$pos) * 1.03)
+    xmin = floor(max(d$pos) * -0.03)
+    # set the default arguments
+    def_args <- list(xaxt = "n",
+                     #yaxt = "n",
+                     # no box around the plot
+                     bty = "n",
+                     xaxs = "i",
+                     yaxs = "i", 
+                     # labels are always horizontal
+                     las = 1,
+                     # point shape: filled, round dot
+                     pch = pointshape,
+                     # axis limits
+                     xlim = c(xmin, xmax),
+                     ylim = c(0, ceiling(max(d$logp))),
+                     xlab = xlabel,
+                     ylab = "") 
+    # create a list with the extra arguments listed by user
+    dotargs <- list(...)
+    # plot
+    do.call("plot", c(NA, dotargs, def_args[!names(def_args) %in% 
+        names(dotargs)]))
+    
+    if (!is.null(chrlabs)) {
+      # give warnings if things are off
+        if (is.character(chrlabs)) {
+            if (length(chrlabs) == length(labs)) {
+                labs <- chrlabs
+            }
+            else {
+                warning("You're trying to specify chromosome labels but the number of labels != number of chromosomes.")
+            }
+        }
+        else {
+            warning("If you're trying to specify chromosome labels, chrlabs must be a character vector")
+        }
+    }
+    # add specific x axis
+    if (nchr == 1) {
+        axis(1, ...)
+    }
+    # specify the ticks here for the x axis (side = 1)
+    else {
+        axis(1, at = ticks, labels = labs, tck = -0.025, cex.axis = 1)
+      
+    }
+    # add text for p-value threshold
+    #text(75, suggestiveline + 0.1, "p-value threshold = 0.05",
+    # cex = .8, pos = 4, col = "purple")
+    
+    # specify the change of colours at each chromosome
+    col = rep(col, max(d$CHR))
+    # if there is only 1 chromosome, there will by only one colour
+    if (nchr == 1) {
+        with(d, points(pos, logp, pch = pointshape, col = col[1], ...))
+    }
+    # if there are more than 1 chrosomome, there will be a change of colour
+    else {
+        icol = 1
+        for (i in unique(d$index)) {
+            with(d[d$index == unique(d$index)[i], ], points(pos, 
+                logp, col = col[icol], pch = pointshape, ...))
+            icol = icol + 1
+        }
+    }
+    
+    
+    # add a suggestive line
+    if (suggestiveline) 
+        abline(h = suggestiveline, col = "#018571")
+    # add a genomewide line
+    if (genomewideline) 
+        abline(h = genomewideline, col = "red")
+    # colour specific points
+    if (!is.null(highlight)) {
+        if (any(!(highlight %in% d$SNP))) 
+            warning("You're trying to highlight SNPs that don't exist in your results.")
+        d.highlight <- d[which(d$SNP %in% highlight), ]
+        with(d.highlight, points(pos, logp, col = "#92c5de", pch = pointshape, 
+            ...))
+    }
+    # annotate some points
+    if (!is.null(annotatePval)) {
+        topHits = subset(d, P <= annotatePval)
+        par(xpd = TRUE)
+        if (annotateTop == FALSE) {
+            with(subset(d, P <= annotatePval), textxy(pos, -log10(P), 
+                offset = 0.625, labs = topHits$SNP, cex = 0.45), 
+                ...)
+        }
+        else {
+            topHits <- topHits[order(topHits$P), ]
+            topSNPs <- NULL
+            for (i in unique(topHits$CHR)) {
+                chrSNPs <- topHits[topHits$CHR == i, ]
+                topSNPs <- rbind(topSNPs, chrSNPs[1, ])
+            }
+            textxy(topSNPs$pos, -log10(topSNPs$P), offset = 0.5, 
+                labs = topSNPs$SNP, cex = 0.5, ...)
+        }
+    }
+    # plot y axis
+    title(ylab = expression(-log[10](italic(p))),
+          line = 2)
+    # This value specifies where in the plotting device an object can actually
+    # be plotted. The default is xpd = FALSE, which means that plotting is clipped,
+    # or restricted, to the plotting region.
+    par(xpd = FALSE)
+}
+
+```
+
+# What we expect
+If there is a social supergene, we expect many SNPs from the same contig to be significantly associated with social type.
+We tested by creating a fake SNP and inserting in our data, resulting in a Manhattan plot for a clear differentiation for this SNP (Figure 1, top right, in green).
+
+```{r manhattan with 1 homhet fake snp, eval = TRUE, echo = FALSE}
+# remove NAs and rename
+plink_output_with_fake_snp_noNA <- subset(x = plink_output_with_fake_snp, subset = !is.na(plink_output_with_fake_snp$P))
+
+# adjust the p-value using Benjamini and Hochberg method
+plink_output_with_fake_snp_noNA$adj_pvalue <- p.adjust(plink_output_with_fake_snp_noNA$P, method = "BH")
+
+# Prepare the data for length of contig
+# name columns
+colnames(scaff_length_df_with_fake_snp) <- c("contig_names", "contig_length")
+
+# change contig names from short to long form
+scaff_length_df_with_fake_snp$contig_names_altered <- gsub(pattern = "Ppal_E.", x = scaff_length_df_with_fake_snp$contig_names, replacement = "")
+scaff_length_df_with_fake_snp$contig_names_altered <- gsub(pattern = "$", x = scaff_length_df_with_fake_snp$contig_names_altered, replacement = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon")
+
+# remove factors
+scaff_length_df_with_fake_snp$contig_names <- as.character(scaff_length_df_with_fake_snp$contig_names)
+
+# add a row for the fake contig and SNP
+scaff_length_df_with_fake_snp[nrow(scaff_length_df_with_fake_snp) + 1,] <- list("Ppal_E.contig_01", 72141, "contig_01_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon")
+
+# order by length
+scaff_length_df_with_fake_snp_ordered <- scaff_length_df_with_fake_snp[order(-scaff_length_df_with_fake_snp$contig_length), ]
+
+# make a small data.frame of contig names and rank (by descending contig length)
+scaff_length_df_with_fake_snp_ordered_with_ids <- as.data.frame(cbind(as.character(scaff_length_df_with_fake_snp_ordered$contig_names_altered),
+                                                   c(1:nrow(scaff_length_df_with_fake_snp_ordered)),
+                                                   as.numeric(as.character(scaff_length_df_with_fake_snp_ordered$contig_length))))
+# name columns
+colnames(scaff_length_df_with_fake_snp_ordered_with_ids) <- c("contig_names", "contig_rank_by_length", "contig_length")
+
+# create new columns for ids in the large dataframe
+plink_output_with_fake_snp_noNA$contig_rank_by_length <- scaff_length_df_with_fake_snp_ordered_with_ids$contig_rank_by_length[match(plink_output_with_fake_snp_noNA$CHR, scaff_length_df_with_fake_snp_ordered_with_ids$contig_names)]
+
+# change class
+plink_output_with_fake_snp_noNA$BP                    <- as.numeric(as.character(plink_output_with_fake_snp_noNA$BP))
+plink_output_with_fake_snp_noNA$P                     <- as.numeric(as.character(plink_output_with_fake_snp_noNA$P))
+plink_output_with_fake_snp_noNA$adj_pvalue            <- as.numeric(as.character(plink_output_with_fake_snp_noNA$adj_pvalue))
+plink_output_with_fake_snp_noNA$contig_rank_by_length <- as.numeric(as.character(plink_output_with_fake_snp_noNA$contig_rank_by_length))
+
+# Prepare manhattan plot for only the 10 longuest contigs + fake SNP
+plink_output_with_fake_snp_noNA_10long_plus_fake <- rbind(subset(plink_output_with_fake_snp_noNA, plink_output_with_fake_snp_noNA$contig_rank_by_length %in% 1:10),
+                                                   subset(plink_output_with_fake_snp_noNA, plink_output_with_fake_snp_noNA$contig_rank_by_length %in% "531"))
+# Manhattan plot
+man_title <- paste("Figure 1: SNPs in all populations \n for 10 longest scaffolds and fake purple SNP")
+man_xlab  <- paste("Scaffolds ordered by length")
+em_manhattan(plink_output_with_fake_snp_noNA_10long_plus_fake, 
+          chr            = "contig_rank_by_length",
+          bp             = "BP", 
+          p              = "adj_pvalue", 
+          snp            = "SNP", 
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          highlight      = "contig_01_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
+          main           = man_title, 
+          xlab           = man_xlab)
+
+
+
+```
+
+We also created a new dataset reflecting the system of _Solenopsis invicta_: 
+3757 real SNPs and 94 fake SNPs (monogynous samples are 0/0, polygynous samples are 1/3 0/0 or 2/3 0/1). 
+All SNPs are within-population polymorphic, supported by 100% of samples, 108 samples, in coding regions.
+
+```{r manhattan with 94 solenopsis fake snps, eval = TRUE, echo = FALSE}
+# remove NAs and rename
+plink_output_with_fake_snps_noNA <- subset(x = plink_output_with_fake_snps,
+                                           subset = !is.na(plink_output_with_fake_snps$P))
+
+# change class
+plink_output_with_fake_snps_noNA$CHR <- as.character(plink_output_with_fake_snps_noNA$CHR)
+plink_output_with_fake_snps_noNA$SNP <- as.character(plink_output_with_fake_snps_noNA$SNP)
+
+# adjust the p-value using Benjamini and Hochberg method
+plink_output_with_fake_snps_noNA$adj_pvalue <- p.adjust(plink_output_with_fake_snps_noNA$P,
+                                                        method = "BH")
+
+# create fake contig names in a vector
+fake_contig_vec <- grep(x = plink_output_with_fake_snps_noNA$CHR,
+                        pattern = "fake.*", value = TRUE)
+
+# create information about fake contigs (contig_names contig_length contig_names_altered)
+fake_contig_names <- paste("Ppal_E.",
+                           gsub(x = fake_contig_vec,
+                                pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon",
+                                replacement = ""),
+                           sep = "")
+
+fake_snp_names <-  grep(x = plink_output_with_fake_snps_noNA$SNP,
+                        pattern = "fake.*", value = TRUE)
+
+# the length of each fake contig is the same: 72141 nucleotides
+fake_contig_length <- rep(72141, times = length(fake_contig_vec))
+
+# create a df with contig names, length, longer names
+fake_length_df <- as.data.frame(cbind(fake_contig_names, fake_contig_length, fake_contig_vec),
+                                stringsAsFactors = FALSE)
+
+# name columns
+colnames(fake_length_df) <- colnames(scaff_length_df_with_fake_snp)
+
+# add a row for the fake contigs and SNPs
+scaff_length_df_with_fake_snps <- as.data.frame(rbind(scaff_length_df_with_fake_snp,
+                                                      fake_length_df),
+                                                stringsAsFactors = FALSE)
+                                        
+# change numeric
+scaff_length_df_with_fake_snps$contig_length <- as.numeric(scaff_length_df_with_fake_snps$contig_length)
+
+# order by length
+scaff_length_df_with_fake_snps_ordered <- scaff_length_df_with_fake_snps[order(-scaff_length_df_with_fake_snps$contig_length), ]
+
+# make a small data.frame of contig names and rank (by descending contig length)
+scaff_length_df_with_fake_snps_ordered_with_ids <- as.data.frame(cbind(scaff_length_df_with_fake_snps_ordered$contig_names_altered,
+                    c(1:nrow(scaff_length_df_with_fake_snps_ordered)),
+                    scaff_length_df_with_fake_snps_ordered$contig_length),
+                    stringsAsFactors = FALSE)
+                                                   
+
+# name columns
+colnames(scaff_length_df_with_fake_snps_ordered_with_ids) <- c("contig_names", "contig_rank_by_length", "contig_length")
+
+# create new columns for ids in the large dataframe
+plink_output_with_fake_snps_noNA$contig_rank_by_length <- scaff_length_df_with_fake_snps_ordered_with_ids$contig_rank_by_length[match(plink_output_with_fake_snps_noNA$CHR,
+                                                                                                                                     scaff_length_df_with_fake_snps_ordered_with_ids$contig_names)]
+
+
+# change class
+plink_output_with_fake_snps_noNA$BP                    <- as.numeric(as.character(plink_output_with_fake_snps_noNA$BP))
+plink_output_with_fake_snps_noNA$P                     <- as.numeric(as.character(plink_output_with_fake_snps_noNA$P))
+plink_output_with_fake_snps_noNA$adj_pvalue            <- as.numeric(as.character(plink_output_with_fake_snps_noNA$adj_pvalue))
+plink_output_with_fake_snps_noNA$contig_rank_by_length <- as.numeric(as.character(plink_output_with_fake_snps_noNA$contig_rank_by_length))
+
+# check the adjusted p values between the group of fake snps and the group of real snps
+plink_output_fake_snps <- subset(plink_output_with_fake_snps_noNA, subset = SNP %in% fake_snp_names) #7.659e-09
+plink_output_fake_snps_removed <- subset(plink_output_with_fake_snps_noNA, subset = !(SNP %in% fake_snp_names))
+#summary(plink_output_fake_snps$adj_pvalue)
+#summary(plink_output_fake_snps_removed$adj_pvalue)
+
+# number of fake SNPs with p value are lower than 0.05 = 95
+#nrow(subset(plink_output_fake_snps, subset = adj_pvalue <= 0.05))
+#hist(plink_output_fake_snps$adj_pvalue, breaks = 100)
+# number of real SNPs with p value are lower than 0.05 = 15
+#nrow(subset(plink_output_fake_snps_removed, subset = adj_pvalue <= 0.05))
+#hist(plink_output_fake_snps_removed$adj_pvalue, breaks = 100)
+solenopsis_real_snps_sig_vec <- subset(plink_output_fake_snps_removed, subset = adj_pvalue <= 0.05, select = SNP)
+
+# Manhattan plot
+man_title <- paste("Solenopsis simulation")
+man_xlab  <- paste("Scaffolds ordered by length")
+em_manhattan(plink_output_with_fake_snps_noNA, 
+          chr            = "contig_rank_by_length",
+          bp             = "BP", 
+          p              = "adj_pvalue", 
+          snp            = "SNP", 
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          highlight      = fake_snp_names,
+          main           = man_title, 
+          xlab           = man_xlab)
+
+
+
+```
+
+95 simulated SNPs are significantly associated with social type using the Fisher test (adjusted p-value max = 8.984e-07).
+15 real SNP are also significantly associated with social type (lowest adjusted p-value = 0.00124).
+
+
+We also created a new dataset reflecting the system of _Formica selysi_: 
+3757 real SNPs and 138 fake SNPs (monogynous samples are 0/0, polygynous samples are 0.68 0/1 or 0.23 1/1). 
+All SNPs are within-population polymorphic, supported by 100% of samples, 108 samples, in coding regions.
+
+```{r manhattan with 138 formica fake snps, eval = TRUE, echo = FALSE}
+# remove NAs and rename
+plink_output_with_fake_snps_noNA <- subset(x = plink_output_with_fake_snps_formica,
+                                           subset = !is.na(plink_output_with_fake_snps_formica$P))
+
+# change class
+plink_output_with_fake_snps_noNA$CHR <- as.character(plink_output_with_fake_snps_noNA$CHR)
+plink_output_with_fake_snps_noNA$SNP <- as.character(plink_output_with_fake_snps_noNA$SNP)
+plink_output_with_fake_snps_noNA$BP  <- as.numeric(as.character(plink_output_with_fake_snps_noNA$BP))
+plink_output_with_fake_snps_noNA$P   <- as.numeric(as.character(plink_output_with_fake_snps_noNA$P))
+
+
+# adjust the p-value using Benjamini and Hochberg method
+plink_output_with_fake_snps_noNA$adj_pvalue <- p.adjust(plink_output_with_fake_snps_noNA$P,
+                                                        method = "BH")
+
+# create fake contig names in a vector
+fake_contig_vec <- grep(x = plink_output_with_fake_snps_noNA$CHR,
+                        pattern = "fake.*", value = TRUE)
+
+# create information about fake contigs (contig_names contig_length contig_names_altered)
+fake_contig_names <- paste("Ppal_E.",
+                           gsub(x = fake_contig_vec,
+                                pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon",
+                                replacement = ""),
+                           sep = "")
+
+fake_snp_names <-  grep(x = plink_output_with_fake_snps_noNA$SNP,
+                        pattern = "fake.*", value = TRUE)
+
+# the length of each fake contig is the same: 72141 nucleotides
+fake_contig_length <- rep(72141, times = length(fake_contig_vec))
+
+# create a df with contig names, length, longer names
+fake_length_df <- as.data.frame(cbind(fake_contig_names, fake_contig_length, fake_contig_vec),
+                                stringsAsFactors = FALSE)
+
+# name columns
+colnames(fake_length_df) <- colnames(scaff_length_df_with_fake_snp)
+
+# add a row for the fake contigs and SNPs
+scaff_length_df_with_fake_snps <- as.data.frame(rbind(scaff_length_df_with_fake_snp,
+                                                      fake_length_df),
+                                                stringsAsFactors = FALSE)
+                                        
+# change numeric
+scaff_length_df_with_fake_snps$contig_length <- as.numeric(scaff_length_df_with_fake_snps$contig_length)
+
+# order by length
+scaff_length_df_with_fake_snps_ordered <- scaff_length_df_with_fake_snps[order(-scaff_length_df_with_fake_snps$contig_length), ]
+
+# make a small data.frame of contig names and rank (by descending contig length)
+scaff_length_df_with_fake_snps_ordered_with_ids <- as.data.frame(cbind(scaff_length_df_with_fake_snps_ordered$contig_names_altered,
+                    c(1:nrow(scaff_length_df_with_fake_snps_ordered)),
+                    scaff_length_df_with_fake_snps_ordered$contig_length),
+                    stringsAsFactors = FALSE)
+                                                   
+
+# name columns
+colnames(scaff_length_df_with_fake_snps_ordered_with_ids) <- c("contig_names", "contig_rank_by_length", "contig_length")
+
+# create new columns for ids in the large dataframe
+plink_output_with_fake_snps_noNA$contig_rank_by_length <- scaff_length_df_with_fake_snps_ordered_with_ids$contig_rank_by_length[match(plink_output_with_fake_snps_noNA$CHR,
+                                                                                                                                     scaff_length_df_with_fake_snps_ordered_with_ids$contig_names)]
+
+
+# change class
+plink_output_with_fake_snps_noNA$adj_pvalue            <- as.numeric(as.character(plink_output_with_fake_snps_noNA$adj_pvalue))
+plink_output_with_fake_snps_noNA$contig_rank_by_length <- as.numeric(as.character(plink_output_with_fake_snps_noNA$contig_rank_by_length))
+
+# check the adjusted p values between the group of fake snps and the group of real snps
+plink_output_fake_snps         <- subset(plink_output_with_fake_snps_noNA, subset = SNP %in% fake_snp_names) # 6.402e-18 
+plink_output_fake_snps_removed <- subset(plink_output_with_fake_snps_noNA, subset = !(SNP %in% fake_snp_names))
+#summary(plink_output_fake_snps$adj_pvalue)
+#summary(plink_output_fake_snps_removed$adj_pvalue) # between 0 and 1
+
+# number of fake SNPs with p value are lower than 0.05 = 139
+#nrow(subset(plink_output_fake_snps, subset = adj_pvalue <= 0.05))
+#hist(plink_output_fake_snps$adj_pvalue, breaks = 100)
+# number of real SNPs with p value are lower than 0.05 = 18
+#nrow(subset(plink_output_fake_snps_removed, subset = adj_pvalue <= 0.05))
+#hist(plink_output_fake_snps_removed$adj_pvalue, breaks = 100)
+formica_real_snps_sig_vec <- subset(plink_output_fake_snps_removed, subset = adj_pvalue <= 0.05, select = SNP)
+
+# check if formica real snps that are significant are also significant in solenopsis
+# solenopsis_real_snps_sig_vec$SNP %in% formica_real_snps_sig_vec$SNP
+
+# Manhattan plot
+man_title <- paste("Formica simulation")
+man_xlab  <- paste("Scaffolds ordered by length")
+em_manhattan(plink_output_with_fake_snps_noNA, 
+          chr            = "contig_rank_by_length",
+          bp             = "BP", 
+          p              = "adj_pvalue", 
+          snp            = "SNP", 
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          highlight      = fake_snp_names,
+          main           = man_title, 
+          xlab           = man_xlab)
+
+
+
+```
+
+All 139 simulated SNPs are significantly associated with social type using the Fisher test (adjusted p-value average = 6.402e-18).
+18 real SNPs are also significantly associated with social type (lowest adjusted p-value = 0.0008513). 15 of them are also significant in Solenopsis simulation.
+
+As predicted, Fisher test detects more easily the Formica SNPs (in which there are strictly no homozygote for reference in polygynous samples) than the Solenopsis SNPs, with respectively P values of 7.659e-09 and  6.402e-18.
+
+We also simulated the misgenotyping of 10% of the samples (i.e. giving the label P when the sample was monogynous, and vice versa). Can we still see the signal?
+
+
+```{r manhattan with 1 homhet fake snp and 10% misgenotyping, eval = TRUE, echo = FALSE}
+# remove NAs and rename
+plink_output_with_fake_snp_misgeno_noNA <- subset(x = plink_output_with_fake_snp_misgenotyping, subset = !is.na(plink_output_with_fake_snp_misgenotyping$P))
+
+# adjust the p-value using Benjamini and Hochberg method
+plink_output_with_fake_snp_misgeno_noNA$adj_pvalue <- p.adjust(plink_output_with_fake_snp_misgeno_noNA$P, method = "BH")
+
+# create new columns for ids in the large dataframe
+plink_output_with_fake_snp_misgeno_noNA$contig_rank_by_length <- scaff_length_df_with_fake_snp_ordered_with_ids$contig_rank_by_length[match(plink_output_with_fake_snp_misgeno_noNA$CHR, scaff_length_df_with_fake_snp_ordered_with_ids$contig_names)]
+
+# change class
+plink_output_with_fake_snp_misgeno_noNA$BP                    <- as.numeric(as.character(plink_output_with_fake_snp_misgeno_noNA$BP))
+
+plink_output_with_fake_snp_misgeno_noNA$P                     <- as.numeric(as.character(plink_output_with_fake_snp_misgeno_noNA$P))
+
+plink_output_with_fake_snp_misgeno_noNA$adj_pvalue            <- as.numeric(as.character(plink_output_with_fake_snp_misgeno_noNA$adj_pvalue))
+
+plink_output_with_fake_snp_misgeno_noNA$contig_rank_by_length <- as.numeric(as.character(plink_output_with_fake_snp_misgeno_noNA$contig_rank_by_length))
+
+# Prepare Manhattan plot for only the 10 longuest contigs + fake SNP
+plink_output_with_fake_snp_misgeno_noNA_10long_plus_fake <- rbind(subset(plink_output_with_fake_snp_misgeno_noNA, plink_output_with_fake_snp_misgeno_noNA$contig_rank_by_length %in% 1:10),
+                                                   subset(plink_output_with_fake_snp_misgeno_noNA, plink_output_with_fake_snp_misgeno_noNA$contig_rank_by_length %in% "531"))
+
+# Manhattan plot
+man_title <- paste("SNPs in all populations, 10% misgenotyping \n simulated blue SNP")
+
+man_xlab  <- paste("Scaffolds ordered by length")
+
+em_manhattan(plink_output_with_fake_snp_misgeno_noNA_10long_plus_fake, 
+          chr            = "contig_rank_by_length",
+          bp             = "BP", 
+          p              = "adj_pvalue", 
+          snp            = "SNP", 
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          highlight      = "contig_01_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
+          main           = man_title, 
+          xlab           = man_xlab)
+
+
+
+```
+
+With 10% misgenotyping, the signal is lost: the simulated SNP (blue, top right) has similar adjusted p-value that of all other SNPs (non-simulated).
+
+We simulated again the misgenotyping of 10% of the samples (i.e. giving the label P when the sample was monogynous, and vice versa). Can we still see the signal?
+
+
+```{r manhattan with 1 homhet fake snp and 10% misgenotyping 2nd attempt, eval = TRUE, echo = FALSE}
+# remove NAs and rename
+plink_output_with_fake_snp_misgeno_2nd_noNA <- subset(x = plink_output_with_fake_snp_misgenotyping_2nd,
+                                                  subset = !is.na(plink_output_with_fake_snp_misgenotyping_2nd$P))
+
+# adjust the p-value using Benjamini and Hochberg method
+plink_output_with_fake_snp_misgeno_2nd_noNA$adj_pvalue <- p.adjust(plink_output_with_fake_snp_misgeno_2nd_noNA$P,
+                                                                   method = "BH")
+
+# create new columns for ids in the large dataframe
+plink_output_with_fake_snp_misgeno_2nd_noNA$contig_rank_by_length <- scaff_length_df_with_fake_snp_ordered_with_ids$contig_rank_by_length[match(plink_output_with_fake_snp_misgeno_2nd_noNA$CHR, scaff_length_df_with_fake_snp_ordered_with_ids$contig_names)]
+
+# change class
+plink_output_with_fake_snp_misgeno_2nd_noNA$BP                    <- as.numeric(as.character(plink_output_with_fake_snp_misgeno_2nd_noNA$BP))
+
+plink_output_with_fake_snp_misgeno_2nd_noNA$P                     <- as.numeric(as.character(plink_output_with_fake_snp_misgeno_2nd_noNA$P))
+
+plink_output_with_fake_snp_misgeno_2nd_noNA$adj_pvalue            <- as.numeric(as.character(plink_output_with_fake_snp_misgeno_2nd_noNA$adj_pvalue))
+
+plink_output_with_fake_snp_misgeno_2nd_noNA$contig_rank_by_length <- as.numeric(as.character(plink_output_with_fake_snp_misgeno_2nd_noNA$contig_rank_by_length))
+
+# Prepare Manhattan plot for only the 10 longuest contigs + fake SNP
+plink_output_with_fake_snp_misgeno_2nd_noNA_10long_plus_fake <- rbind(subset(plink_output_with_fake_snp_misgeno_2nd_noNA,
+                                                                             plink_output_with_fake_snp_misgeno_2nd_noNA$contig_rank_by_length %in% 1:10),
+                                                   subset(plink_output_with_fake_snp_misgeno_2nd_noNA, plink_output_with_fake_snp_misgeno_2nd_noNA$contig_rank_by_length %in% "531"))
+
+# Manhattan plot
+man_title <- paste("SNPs in all populations, 10% misgenotyping \n simulated blue SNP")
+
+man_xlab  <- paste("Scaffolds ordered by length")
+
+em_manhattan(plink_output_with_fake_snp_misgeno_2nd_noNA_10long_plus_fake, 
+          chr            = "contig_rank_by_length",
+          bp             = "BP", 
+          p              = "adj_pvalue", 
+          snp            = "SNP", 
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          highlight      = "contig_01_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
+          main           = man_title, 
+          xlab           = man_xlab)
+
+
+
+```
+
+# What we have
+
+## Whole data: No significant SNP associated with social type 
+
+When looking at the whole dataset, there are 3,660 SNPs that are polymorphic within each population. 
+There are no significant SNP associated with social type.
+
+
+```{r fisher manhattan maf 5, eval = TRUE, echo = FALSE, fig.height = 4, fig.width = 6}
+fisher_snp_num <- nrow(plink_output_fisher_all)
+
+## Fisher: Correcting for multiple adjustments
+# After testing individually all 11,993 loci, we correct for multiple comparisons and retrieve loci with a p-value of less than 5%. 
+# We use a very conservative approach: the correction with false discovery rate by Benjamini and Hochberg method.
+# adjust the p-value using Benjamini and Hochberg method (ie FDR)
+# values are ordered the same way as the input
+plink_output_fisher_all$adj_pvalue <- p.adjust(plink_output_fisher_all$P, method = "BH")
+
+# Are any adjusted pvalues lower than 0.05 ?
+if(sum(plink_output_fisher_all$adj_pvalue <= 0.05) == 0){
+  #print("None of the adjusted pvalues are lower than 0.05")
+  # calculate how many SNPs have unadjusted p-values lower than 0.05
+  unadjusted_pvalues_num <- nrow(subset(plink_output_fisher_all, subset = P <= 0.05))
+  #print(paste(unadjusted_pvalues_num , "unadjusted p-values are lower than 0.05"))
+  plink_output_fisher_all_ordered <- plink_output_fisher_all[order(plink_output_fisher_all$P), ]
+  # keep the top SNPs (lowest pvalues)
+  sig_snp_fisher_output <- subset(plink_output_fisher_all_ordered, subset = adj_pvalue < 1)
+  #print(paste("There are", nrow(sig_snp_fisher_output), "SNPs with adjusted p-value lower than 1"))
+  interesting_snp_vec <- as.character(sig_snp_fisher_output$SNP)
+  sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+} else {
+  #print(paste(sum(plink_output_fisher_all$adj_pvalue <= 0.05), "adjusted pvalues are lower than 0.05"))
+  sig_snp_fisher_output     <- subset(plink_output_fisher_all, subset = plink_output_fisher_all$adj_pvalue <= 0.05)
+  sig_snp_vec               <- as.character(sig_snp_fisher_output$SNP)
+  sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+  num_contig_with_sig_snp   <- length(unique(sig_snp_fisher_output$CHR))
+}
+# None of the adjusted pvalues are lower than 0.05
+# 174 unadjusted p-values are lower than 0.05
+# There are 154 SNPs with adjusted p-value lower than 1
+# Prepare the data for length of contig
+# name columns
+colnames(contig_length_df_all) <- c("contig_names", "contig_length")
+# change contig names from short to long form
+contig_length_df_all$contig_names_altered <- gsub(pattern = "Ppal_E.", x = contig_length_df_all$contig_names, replacement = "")
+contig_length_df_all$contig_names_altered <- gsub(pattern = "$", x = contig_length_df_all$contig_names_altered, replacement = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon")
+# order rows by contig length
+contig_length_df_ordered <- contig_length_df_all[order(-contig_length_df_all$contig_length), ]
+# make a small data.frame of contig names and rank (by descending contig length)
+contig_length_df_ordered_with_ids <- as.data.frame(cbind(contig_length_df_ordered$contig_names_altered,
+                                                         c(1:nrow(contig_length_df_ordered)),
+                                                         contig_length_df_ordered$contig_length),
+                                                   stringsAsFactors = FALSE
+                                                   )
+# name columns
+colnames(contig_length_df_ordered_with_ids) <- c("contig_names", "contig_rank_by_length", "contig_length")
+# change class 
+contig_length_df_ordered_with_ids$contig_rank_by_length <- as.numeric(contig_length_df_ordered_with_ids$contig_rank_by_length)
+contig_length_df_ordered_with_ids$contig_length         <- as.numeric(contig_length_df_ordered_with_ids$contig_length)
+# change class
+plink_output_fisher_all$CHR <- as.character(plink_output_fisher_all$CHR)
+# create 2 new columns for snp and length ranks in the large dataframe plink_output_fisher
+plink_output_fisher_all$contig_rank_by_length <- contig_length_df_ordered_with_ids$contig_rank_by_length[match(plink_output_fisher_all$CHR, contig_length_df_ordered_with_ids$contig_names)]
+
+# change class
+sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+# info just about the significant SNPs and their contigs
+sig_contig_fisher_output <- subset(plink_output_fisher_all, subset = plink_output_fisher_all$CHR %in% sig_snp_fisher_output$CHR)
+
+# manhattan function needs specific classes
+plink_output_fisher_all$BP                     <- as.numeric(plink_output_fisher_all$BP)
+plink_output_fisher_all$P                      <- as.numeric(plink_output_fisher_all$P)
+plink_output_fisher_all$adj_pvalue             <- as.numeric(plink_output_fisher_all$adj_pvalue)
+plink_output_fisher_all$contig_rank_by_length  <- as.numeric(as.character(plink_output_fisher_all$contig_rank_by_length))
+
+# # Plot whole manhattan unadjusted values
+# man_title <- paste("Fisher: all SNPs, in whole dataset,\n 100% sample support, p-values unadjusted")
+# man_xlab  <- paste("contigs ordered by length")
+# man_snp <- as.character(sig_snp_fisher_output$SNP)
+# em_manhattan(plink_output_fisher_all,
+#           chr = "contig_rank_by_length",
+#           bp = "BP",
+#           p = "P",
+#           snp = "SNP",
+#           suggestiveline = -log10(0.05),
+#           genomewideline = FALSE,
+#           main = man_title,
+#           xlab = man_xlab)
+
+# Plot whole manhattan adjusted values
+man_title <- paste("Fisher test for SNPs in whole dataset for maf > 5%,\n 100% sample support, p-values adjusted")
+man_xlab  <- paste("contigs ordered by length")
+em_manhattan(plink_output_fisher_all,
+          chr = "contig_rank_by_length",
+          bp = "BP",
+          p = "adj_pvalue",
+          snp = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          main = man_title,
+          xlab = man_xlab,
+          ylim = c(0, 2))
+
+# Plot for MS
+man_xlab  <- paste("Contigs ordered by length")
+em_manhattan(plink_output_fisher_all,
+          chr            = "contig_rank_by_length",
+          bp             = "BP",
+          p              = "adj_pvalue",
+          snp            = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          xlab           = man_xlab,
+          ylim           = c(0, 2))
+
+```
+
+How does this compare to the dataset with non-coding regions?
+We look now at 14,597 SNPs, instead of 2,318.
+The only difference is that we include now SNPs that are found in the non-coding as well as in the coding region.
+Filters: maf 0.05, non-monomorphic with a given population.
+
+```{r fisher manhattan coding non coding, eval = TRUE, echo = FALSE}
+plink_output_fisher_coding_non_coding_snp_num <- nrow(plink_output_fisher_coding_non_coding)
+
+## Fisher: Correcting for multiple adjustments
+# After testing individually all 14,597 loci, we correct for multiple comparisons and retrieve loci with a p-value of less than 5%. 
+# We use a very conservative approach: the correction with false discovery rate by Benjamini and Hochberg method.
+# adjust the p-value using Benjamini and Hochberg method (ie FDR)
+# values are ordered the same way as the input
+plink_output_fisher_coding_non_coding$adj_pvalue <- p.adjust(plink_output_fisher_coding_non_coding$P, method = "BH")
+
+# Are any adjusted pvalues lower than 0.05 ?
+if(sum(plink_output_fisher_coding_non_coding$adj_pvalue <= 0.05) == 0){
+  #print("None of the adjusted pvalues are lower than 0.05")
+  # calculate how many SNPs have unadjusted p-values lower than 0.05
+  unadjusted_pvalues_num <- nrow(subset(plink_output_fisher_coding_non_coding, subset = P <= 0.05))
+  #print(paste(unadjusted_pvalues_num , "unadjusted p-values are lower than 0.05"))
+  plink_output_fisher_coding_non_coding_ordered <- plink_output_fisher_coding_non_coding[order(plink_output_fisher_coding_non_coding$P), ]
+  # keep the top SNPs (lowest pvalues)
+  sig_snp_fisher_output <- subset(plink_output_fisher_coding_non_coding_ordered, subset = adj_pvalue < 1)
+  #print(paste("There are", nrow(sig_snp_fisher_output), "SNPs with adjusted p-value lower than 1"))
+  sig_snp_vec <- as.character(sig_snp_fisher_output$SNP)
+  sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+  
+} else {
+  #print(paste(sum(plink_output_fisher_coding_non_coding$adj_pvalue <= 0.05), "adjusted pvalues are lower than 0.05"))
+  sig_snp_fisher_output     <- subset(plink_output_fisher_coding_non_coding, subset = plink_output_fisher_coding_non_coding$adj_pvalue <= 0.05)
+  sig_snp_vec               <- as.character(sig_snp_fisher_output$SNP)
+  sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+  num_contig_with_sig_snp   <- length(unique(sig_snp_fisher_output$CHR))
+}
+# 13 adjusted pvalues are lower than 0.05
+
+# Prepare the data for length of contig
+# name columns
+colnames(coding_non_coding_length) <- c("CHR", "contig_length")
+# change class
+coding_non_coding_length$CHR <- as.character(coding_non_coding_length$CHR)
+# order the df by decreasing contig length
+coding_non_coding_length_ordered <- coding_non_coding_length[order(-coding_non_coding_length$contig_length), ]
+# create a new column for contig rank (rank 1 is for the largest contig)
+coding_non_coding_length_ordered$contig_rank_by_length <- 1:nrow(coding_non_coding_length_ordered)
+
+# change class
+plink_output_fisher_coding_non_coding$CHR <- as.character(plink_output_fisher_coding_non_coding$CHR)
+# create 1 new column for contig length 
+plink_output_fisher_coding_non_coding$contig_length <- coding_non_coding_length$contig_length[match(plink_output_fisher_coding_non_coding$CHR, coding_non_coding_length$CHR)]
+# create 1 new column for contig length rank
+plink_output_fisher_coding_non_coding$contig_rank_by_length <- coding_non_coding_length_ordered$contig_rank_by_length[match(plink_output_fisher_coding_non_coding$CHR, coding_non_coding_length_ordered$CHR)]
+
+# change class
+sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+# info just about the significant SNPs and their contigs
+sig_contig_fisher_output <- subset(plink_output_fisher_coding_non_coding, subset = plink_output_fisher_coding_non_coding$CHR %in% sig_snp_fisher_output$CHR)
+
+# manhattan function needs specific classes
+plink_output_fisher_coding_non_coding$BP                     <- as.numeric(plink_output_fisher_coding_non_coding$BP)
+plink_output_fisher_coding_non_coding$P                      <- as.numeric(plink_output_fisher_coding_non_coding$P)
+plink_output_fisher_coding_non_coding$adj_pvalue             <- as.numeric(plink_output_fisher_coding_non_coding$adj_pvalue)
+plink_output_fisher_coding_non_coding$contig_rank_by_length  <- as.numeric(as.character(plink_output_fisher_coding_non_coding$contig_rank_by_length))
+
+# interestingly, the 3 longest contigs were filtered out when removing interpopulation monomorphic SNPS
+
+# Plot whole manhattan adjusted values
+man_title <- paste("Fisher test for SNPs in whole dataset for maf > 5%,\n 100% sample support, p-values adjusted")
+man_xlab  <- paste("contigs ordered by length, coding and non coding")
+em_manhattan(plink_output_fisher_coding_non_coding,
+          chr            = "contig_rank_by_length",
+          bp             = "BP",
+          p              = "adj_pvalue",
+          snp            = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          main           = man_title,
+          xlab           = man_xlab,
+          highlight      = sig_snp_vec) #c(sig_snp_vec, interesting_snp_vec))
+
+
+
+```
+
+```{r Plot for figure 1b, eval = TRUE, echo = FALSE}
+# Plot for figure 1
+
+# make a vector for coding and non-coding contigs
+coding_contig_vec <- unique(plink_output_fisher_all$CHR)
+
+# add a column for coding status of contig
+plink_output_fisher_coding_non_coding$contig_status <- ifelse(plink_output_fisher_coding_non_coding$CHR %in% coding_contig_vec, "non_coding", "coding")
+
+# change name of SNP for MS
+plink_output_fisher_coding_non_coding$SNP_short_name <- gsub(x = plink_output_fisher_coding_non_coding$SNP, pattern = "_pilon.*", replacement = "")
+
+# highlight coding SNPs
+coding_snp_vec <- plink_output_fisher_coding_non_coding$SNP_short_name[plink_output_fisher_coding_non_coding$contig_status == "coding"]
+
+
+# Manhattan - GGPLOT WAY
+
+# compute the cumulative position of SNP.
+gwasResults    <- plink_output_fisher_coding_non_coding
+num_contig     <- length(unique(gwasResults$CHR))
+snpsOfInterest <- gwasResults$SNP[gwasResults$adj_pvalue <= 0.05]
+
+# reorder by contig length
+gwasResults1 <- gwasResults[order(gwasResults$contig_length, gwasResults$CHR, decreasing = TRUE), ] 
+
+# don't @ me
+contig_vec <- paste(num_contig:(num_contig + num_contig - 1), unique(gwasResults1$CHR), sep = "")
+
+gwasResults1$ID_CHR  <- unlist(apply(gwasResults1,
+                                     1,
+                                     function(fun_row) grep(pattern = fun_row["CHR"],
+                                                            x = contig_vec,
+                                                            value = TRUE)))
+
+
+
+# Prepare the dataset
+don <- gwasResults1 %>% 
+  
+  # Compute chromosome size
+  group_by(ID_CHR) %>% 
+  summarise(chr_len = max(BP)) %>% 
+  
+  # Calculate cumulative position of each chromosome
+  mutate(tot = cumsum(chr_len) - chr_len) %>%
+  select(-chr_len) %>%
+  
+  # Add this info to the initial dataset
+  left_join(gwasResults1, ., by = c("ID_CHR" = "ID_CHR")) %>%
+  
+  # Add a cumulative position of each SNP
+  # try maybe .by_group = TRUE
+  arrange(ID_CHR, BP) %>%
+  mutate(BPcum = BP + tot) %>%
+
+  # Add highlight and annotation information
+  mutate(is_highlight = ifelse(SNP %in% snpsOfInterest, "yes", "no")) %>%
+  mutate(is_annotate = ifelse(-log10(adj_pvalue) > -log10(0.05), "yes", "no")) 
+
+
+# obtain list of contig names that contain significant SNPs
+sig_contig_list <- unique(as.character(
+  unlist(subset(don, subset = adj_pvalue < 0.05, select = SNP_short_name))))
+
+# save name of sig contigs
+write(x = sig_contig_list, file = "sig-contig-list")
+
+# give attractive names for SNPs
+don$SNP_name <- gsub(x = don$SNP, pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon|([A-Z],[A-Z])", replacement = "")
+
+# Make the plot
+#don <- don[1:100,]
+ggplot(don, aes(x = BPcum, y = -log10(adj_pvalue), group = contig_status)) +
+    
+    # Show all points
+    geom_point(aes(color = as.factor(ID_CHR), shape = contig_status), alpha = 0.6, size = 1.3) +
+    scale_color_manual(values = rep(c("grey", "black"), num_contig)) +
+    
+    # custom X axis:
+    scale_x_discrete(name = "Contigs", 
+                     # the left of the plot will have some space *0.01 unit and added 0.5 unit
+                     # same for the right of the plot
+                     expand = expand_scale(mult = c(0.005, 0.01), add = c(0.5, 0.5))) +
+    
+    # remove space between plot area and x axis
+    scale_y_continuous(expand = c(0, 0),
+                       limits = c(0, 3),
+                       name = "-log(P adjusted)") +      
+
+    # Add highlighted points
+    geom_point(data = subset(don, is_highlight == "yes"), aes(shape = contig_status), color = "#018571", size = 2)+
+   
+    # add significance line
+    geom_hline(yintercept = -log10(0.05), color = "black", size = 0.25, linetype = "dashed") +
+   
+    # Add label using ggrepel to avoid overlapping
+    geom_label_repel(data = subset(don, is_annotate == "yes"),
+                     aes(label = SNP_name),
+                     size               = 3,
+                     segment.color      = "#018571",
+                     segment.size       = 0.2,
+                     min.segment.length = 0.05,
+#                     ylim               = c(-log10(0.05), 3),
+                     point.padding      = 0.25) +
+    
+    
+    # Custom the theme:
+    theme_classic() +
+    theme( 
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      axis.text.x        = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "transparent"),
+      text               = element_text(size = 12),
+      axis.title.y       = element_text(size = 14),
+      axis.title.x       = element_text(size = 14),
+      axis.text.y        = element_text(size = 12)
+    )
+
+# save for MS
+ggsave(filename = "figure1_manhattanplot.png", width = 9, height = 6, dpi = 600)
+```
+
+Lowest P-value : 0.002804
+
+```{r Plot for suppl figure man coding only, eval = TRUE, echo = FALSE}
+# In the manuscript, we argue that there is no signal when we look only at coding regions
+# Here we plot the values of the association test for only the coding regions
+# The figure will go in supplementary
+
+# change
+plink_output_fisher_all$CHR <- as.character(plink_output_fisher_all$CHR)
+plink_output_fisher_all$SNP <- as.character(plink_output_fisher_all$SNP)
+
+# create 1 new column for contig length 
+plink_output_fisher_all$contig_length <- coding_non_coding_length$contig_length[match(plink_output_fisher_all$CHR, coding_non_coding_length$CHR)]
+
+# add an adjusted pvalue column
+plink_output_fisher_all$adj_pvalue <- p.adjust(plink_output_fisher_all$P, method = "BH")
+
+# make a vector for coding contigs
+coding_contig_vec <- as.character(unique(plink_output_fisher_all$CHR))
+
+# add a column for coding status of contig
+plink_output_fisher_all$contig_status <- "coding"
+
+# change name of SNP for MS
+plink_output_fisher_all$SNP_short_name <- gsub(x = plink_output_fisher_all$SNP,
+                                               pattern = "_pilon.*",
+                                               replacement = "")
+
+
+# Manhattan - GGPLOT WAY
+
+# compute the cumulative position of SNP.
+gwasResults    <- plink_output_fisher_all
+
+# 818 contigs
+num_contig     <- length(unique(gwasResults$CHR))
+
+# no SNP have an adjusted p value lower than 0.05
+snpsOfInterest <- gwasResults$SNP[gwasResults$adj_pvalue <= 0.05]
+
+# reorder df by contig length (large to small)
+# needed for next steps (ordering the contigs in x axis)
+gwasResults1 <- gwasResults[order(gwasResults$contig_length,
+                                  gwasResults$CHR,
+                                  decreasing = TRUE), ] 
+
+# don't @ me, this is a hack
+# make a vector with concatenated information: NUMBER(ranging from 818 to 1635)_CHR
+# needed for next steps (ordering the contigs in x axis)
+contig_vec <- paste(num_contig:(num_contig + num_contig - 1),
+                    unique(gwasResults1$CHR),
+                    sep = "")
+
+
+# starting with 8 or 9 need to have a leading 0
+first_contigs_vec <- paste("0",
+                           grep(x = contig_vec, pattern = "^8|^9", value = TRUE),
+                           sep = "")
+
+# names starting with 1 need not to be changed
+last_contigs_vec <- grep(x = contig_vec, pattern = "^1", value = TRUE)
+
+# combining the two vectors into one
+altered_contig_vec <- c(first_contigs_vec, last_contigs_vec)
+
+# take our df by row, obtain the matching contig name (CHR) from our contig_vec (NUMBER_CHR)
+# the resulting NUMBER_CHR goes into a new column called ID_CHR
+gwasResults1$ID_CHR  <- unlist(apply(gwasResults1,
+                                     1,
+                                     function(fun_row) grep(pattern = fun_row["CHR"],
+                                                            x = altered_contig_vec,
+                                                            value = TRUE)))
+
+
+# Prepare the dataset
+don_coding <- gwasResults1 %>% 
+  
+  # Compute chromosome size
+  # a tibble with a column name of contig and a column with the largest SNP position 
+  # (equivalent to the coded length of the contig)
+  # group_by order by numerical values: so 1000 is before 0800
+  group_by(ID_CHR) %>% 
+  summarise(chr_len = max(BP)) %>% 
+  
+  # Calculate cumulative position of each chromosome
+  mutate(tot = cumsum(chr_len) - chr_len) %>%
+  select(-chr_len) %>%
+  
+  # Add this info to the initial dataset
+  left_join(gwasResults1, ., by = c("ID_CHR" = "ID_CHR")) %>%
+  
+  # Add a cumulative position of each SNP
+  # try maybe .by_group = TRUE
+  arrange(ID_CHR, BP, .by_group = TRUE) %>%
+  mutate(BPcum = BP + tot) %>%
+
+  # Add highlight and annotation information
+  mutate(is_highlight = ifelse(SNP %in% snpsOfInterest, "yes", "no")) %>%
+  # -log10(0.05) = 1.30103
+  mutate(is_annotate  = ifelse(-log10(adj_pvalue) > -log10(0.05), "yes", "no")) 
+
+# give attractive names for SNPs
+don_coding$SNP_name <- gsub(x = don_coding$SNP,
+                     pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon|([A-Z],[A-Z])",
+                     replacement = "")
+
+
+
+# Make the plot
+
+ggplot(don_coding, aes(x = BPcum, y = -log10(adj_pvalue))) +
+    
+    # Show all points
+    geom_point(aes(color = as.factor(ID_CHR)), alpha = 0.8, size = 1.3) +
+    scale_color_manual(values = rep(c("grey", "black"), num_contig)) +
+    
+    # custom X axis:
+    scale_x_discrete(name = "Coding contigs", 
+                     # the left of the plot will have some space *0.01 unit and added 0.5 unit
+                     # same for the right of the plot
+                     expand = expand_scale(mult = c(0.005, 0.01), add = c(0.5, 0.5))) +
+    
+    # remove space between plot area and x axis
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 1.5)) +      
+   
+    # add significance line
+    geom_hline(yintercept = 1.30103, color = "black", size = 0.25, linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      #axis.text.x        = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "transparent")) +
+    xlab("Coding contigs") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "suppl_figure1_manhattanplot_coding_only.png", width = 9, height = 6, dpi = 600)
+
+```
+
+
+
+```{r filtering test with 075 suport but polymorphic, eval = TRUE, echo = FALSE}
+# Here the code ofr 121,786 SNPs (75% sample support, polymorphic within a population)
+head(plink_output_fisher_coding_non_coding75, 2)
+
+# adjust for multiple comparisons
+plink_output_fisher_coding_non_coding75$adj_pvalue <- p.adjust(plink_output_fisher_coding_non_coding75$P, 
+                                                               method = "BH")
+
+summary(plink_output_fisher_coding_non_coding75$adj_pvalue)
+```
+
+
+# Evaluating the 13 significant SNPs: frequency of common allele
+Thirteen SNPs are significantly associated with social type.
+Here we visualise the frequency of common allele for each of the loci, separating the data by social type.
+We expect a different proportion M/P in those SNPs compared to other, non-significant SNPs.
+To compare different strengths of signal, we focus our next analysis on the 13 contigs that contain the SNPs.
+We subset the data for those 13 significant SNPs and their 25 neighbouring loci (upstream and downstream).
+
+```{r heterozygosity level plot for 13 snps, eval = TRUE, echo = FALSE, warning = FALSE}
+# check length of those 13 contigs
+sig_contig_length <- subset(coding_non_coding_length, subset = CHR %in% unique(as.character(
+        unlist(subset(don, subset = adj_pvalue < 0.05, select = CHR)))))
+
+# over 40,000 nucleotides long
+
+# preparation: make a file for bcftools to subset the VCF for only the 13 SNPs and their 25 neighbours on each side
+
+# obtain SNP names
+sig_snp_list <- unique(as.character(
+        unlist(subset(don, subset = adj_pvalue < 0.05, select = SNP))))
+
+# save list
+write(x = sig_snp_list,
+          file = "thirteen-sig-snps",
+          sep = "\n")
+
+# make a sig_contig_list
+sig_contig_list <- gsub(x = sig_snp_list,
+                        pattern = ":.*",
+                        replacement = "")
+
+# make a result object: contig, locus position, p values
+temporary_region_file <- as.data.frame(matrix(NA, ncol = 3))
+
+# name columns
+colnames(temporary_region_file) <- c("CHR", "BP", "adj_pvalue")
+
+# loop through the sig contigs
+for(contig_position in 1:length(sig_contig_list)){
+ 
+      # subset df for just this contig
+      test <- subset(plink_output_fisher_coding_non_coding,
+                     subset = CHR == sig_contig_list[contig_position])
+      
+      #print(paste("the number of rows is:", nrow(test)))
+      test$SNP <- as.character(test$SNP)
+      
+      # obtain the rank of the SNP in the contig
+      sig_snp_rank <- as.numeric(which(test$SNP == sig_snp_list[contig_position]))
+      
+      #print(paste("the rank of sig SNP is:", sig_snp_rank))
+      
+      if(sig_snp_rank >= 25){
+          # select 25 neighbouring SNPs on each side
+          temporary_region_file <- rbind(temporary_region_file,
+                                         test[(sig_snp_rank-25):(sig_snp_rank+25), c("CHR", "BP", "adj_pvalue")])
+      } else {
+        # select all SNPs before the sig SNP, and up to 50 following SNPs
+          temporary_region_file <- rbind(temporary_region_file,
+                                         test[1:50, c("CHR", "BP", "adj_pvalue")])
+      }
+
+}      
+
+# remove the NA
+updated_region_file <- temporary_region_file[complete.cases(temporary_region_file), ]
+
+# rename columns for bcftools
+colnames(updated_region_file) <- c("CHROM", "POS", "adj_pvalue")
+
+# save for subsetting VCF prior to the heatmap
+write.table(x = updated_region_file,
+          file = "region-file",
+          quote = FALSE,
+          row.names = FALSE,
+          sep = "\t")
+
+# Prepare the plots
+# aim: in x axis, the loci
+# in y axis, the frequency of the most common allele
+
+# in snp_matrix, I can obtain the most common genotype for a given locus, either 0/0 or 0/1 or 1/1
+
+# remove first two columns (SNP names)
+snp_matrix_geno <- snp_matrix[ , 3:ncol(snp_matrix)]
+
+# change the sample names for biological names by sourcing the colony names
+colnames(sample_list_vec) <- "sample_name"
+
+# create a vector for names
+colony_names <- as.character(sample_list_vec$sample_name)
+
+# keep in vector the names of colony in each social type
+mono_samples <- grep(pattern = "-M", x = colony_names, value = TRUE)
+mono_samples <- c(mono_samples, "A56-N")
+poly_samples <- grep(pattern = "-P", x = colony_names, value = TRUE)
+poly_samples <- c(poly_samples, "I27-N", "andrea-N", "muna-N")
+
+# name the SNP matrix: colony names for columns, SNP names for rows
+colnames(snp_matrix_geno) <- colony_names
+rownames(snp_matrix_geno) <- snp_matrix$V1
+
+# check possibilities
+# unique(unlist(snp_matrix_geno))
+
+# change genotype code
+snp_matrix_geno[snp_matrix_geno == "0/0"] <- 0 
+snp_matrix_geno[snp_matrix_geno == "0/1"] <- 1
+snp_matrix_geno[snp_matrix_geno == "1/1"] <- 2
+snp_matrix_geno[snp_matrix_geno == "./."] <- NA
+
+# collect all frequencies in a dataframe
+freq_mat <- matrix(NA, nrow = nrow(snp_matrix_geno), ncol = 2)
+
+# loop through each locus
+for(position in 1:nrow(snp_matrix_geno)){
+  
+  # subset to one locus
+  one_locus <- snp_matrix_geno[position, ]
+  
+  # transform to long format
+  one_locus_t <- as.data.frame(t(one_locus),
+                               stringsAsFactors = FALSE)
+  
+  # name the column
+  colnames(one_locus_t) <- "alt"
+  
+  # create a new column for reference allele
+  one_locus_t$ref <- 0
+  
+  # code the reference allele based on the alt allele code
+  # if the alt allele is coded 0, it means that the sample has 2 reference alleles
+  one_locus_t$ref[one_locus_t$alt == "0"] <- 2
+  
+  # if the alt allele is coded 1, it means that the sample has 1 reference allele
+  one_locus_t$ref[one_locus_t$alt == "1"] <- 1
+  
+  # if the alt allele is coded 2, it means that the sample has 0 reference allele
+  one_locus_t$ref[one_locus_t$alt == "2"] <- 0
+  
+  # change character to numeric
+  one_locus_t$alt <- as.numeric(one_locus_t$alt)
+
+  # obtain sum of each allele code
+  sum_alleles <- c(sum(one_locus_t$alt), sum(one_locus_t$ref))
+    
+  # find the most common allele in this locus
+  most_common_allele_column <- which.max(sum_alleles)
+  
+  # calculate the sum of most frequent allele for monogynous samples
+  sum_freq_allele_M <- sum(one_locus_t[rownames(one_locus_t) %in% mono_samples,
+                                       most_common_allele_column])
+  
+  # calculate the frequency of the most frequent allele in the monogynous samples (diploid, so 2 alleles * number of samples)
+  freq_common_allele_M <- sum_freq_allele_M / (length(mono_samples)*2)
+  
+  # calculate the sum of most frequent allele for polygynous samples
+  sum_freq_allele_P <- sum(one_locus_t[rownames(one_locus_t) %in% poly_samples,
+                                       most_common_allele_column])
+  
+  # calculate the frequency of the most frequent allele in the polygynous samples (diploid, so 2 alleles * number of samples)
+  freq_common_allele_P <- sum_freq_allele_P / (length(poly_samples)*2)
+  
+  # save the two frequencies
+  freq_mat[position, ] <- c(freq_common_allele_M, freq_common_allele_P)
+}
+
+# make into a dataframe
+freq_df <- as.data.frame(freq_mat, stringsAsFactors = FALSE)
+
+# name columns
+colnames(freq_df) <- c("Monogynous", "Polygynous")
+
+# add loci as new column
+freq_df$loci <- rownames(snp_matrix_geno)[1:nrow(freq_df)]
+
+# add contig as a new column
+freq_df$contig <- gsub(pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:.*", 
+                       x = freq_df$loci, replacement = "")
+
+# order original data by contig rank (length), then by snp position 
+plink_output_fisher_coding_non_coding <- plink_output_fisher_coding_non_coding[with(plink_output_fisher_coding_non_coding,
+                                                                                    order(contig_rank_by_length, BP)), ]
+
+# order loci in the same order as the manhattan plot
+freq_df <- freq_df[order(match(freq_df$loci, plink_output_fisher_coding_non_coding$SNP)), ]
+
+# give factor to loci for ggplot order
+#freq_df$loci <- factor(freq_df$loci, levels = freq_df$loci)
+
+# make an extra column for signal
+freq_df$signal <- ifelse(freq_df$loci %in% sig_snp_list, "sig", "not_sig")
+
+# make an extra column for short snp name
+freq_df$short_SNP_name <- gsub(x = freq_df$loci,
+                               pattern = "contig.*_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:",
+                               replacement = "")
+freq_df$short_SNP_name <- gsub(x = freq_df$short_SNP_name,
+                               pattern = "[A-Z].*",
+                               replacement = "")
+
+# transform to factor so that x axis is ordered by location
+freq_df$short_SNP_name <- factor(freq_df$short_SNP_name, levels = freq_df$short_SNP_name)
+
+# make a short name for contig
+sig_contig_list_short <- gsub(x = sig_contig_list,
+                              pattern = "_pilon.*",
+                              replacement = "")
+
+
+updated_region_file$CHROM_short <- gsub(x = updated_region_file$CHROM,
+                                        pattern = "_pilon.*",
+                                        replacement = "")
+
+# make 13 plots of freq, each for the contig
+# make a list of plot names
+make_plot <- list()
+
+
+# 
+# # looping through each contig 
+# for(position in 1:length(sig_contig_list)){
+#   
+#   # subset for one contig
+#   freq_df_1 <- subset(freq_df, subset = contig == sig_contig_list_short[position])
+#   
+#   # add p value for plot with updated_region_file
+#   freq_df_1$adj_pvalue <- updated_region_file$adj_pvalue[match(freq_df_1$short_SNP_name, updated_region_file$POS)]
+#   
+#   # subset the df for only the non-significant SNPs
+#   freq_df_1_not_sig <- subset(freq_df_1, subset = signal == "not_sig")
+#   
+#   # subset the df for only the significant SNP
+#   freq_df_1_sig     <- subset(freq_df_1, subset = signal == "sig")
+#   
+#   # make a contigency table (rows are M, P; columns are non_sig, sig)
+#   freq_mat <- rbind(c(freq_df_1_sig$Monogynous, mean(freq_df_1_not_sig$Monogynous)),
+#                     c(freq_df_1_sig$Polygynous, mean(freq_df_1_not_sig$Polygynous)))
+# 
+#   # for each contig I get a p-value if the observed allele frequencies fit the expected allele frequencies
+#   chisquare_result <- chisq.test(freq_mat)$p.value
+#   
+#   # number of SNPs
+#   number_of_SNPs <- nrow(freq_df_1)
+#   
+#   # change class
+#   freq_df_1$signal <- factor(freq_df_1$signal, levels = freq_df_1$signal)
+#   
+#   # add a column
+#   freq_df_1$to_annotate <- ifelse(freq_df_1$signal == "not_sig",
+#                                   "no annotation",
+#                                   "annotation")
+#   # keep plotting to the list
+#   make_plot[[position]] <- ggplot(freq_df_1) +
+#                                   geom_line(aes(x = short_SNP_name, y = adj_pvalue, group = 1),
+#                                             colour = 'grey', linetype = "dashed") +
+#                             
+#                                   geom_segment(aes(x    = short_SNP_name,
+#                                                    xend = short_SNP_name,
+#                                                    y    = Monogynous,
+#                                                    yend = Polygynous),
+#                                                color = "lightgrey",
+#                                                size = 0.4) +
+#                                   geom_point(aes(x = short_SNP_name, y = Monogynous, colour = signal),
+#                                              shape = 20, size = 1.5) +
+#                                   geom_point(aes(x = short_SNP_name, y = Polygynous, colour = signal),
+#                                              shape = 15, size = 1.5) +
+#                                  
+#                                   scale_color_manual(values = c("black", "#018571")) +
+#                                   annotate("text",
+#                                            x = freq_df_1$short_SNP_name[4],
+#                                            y = 0.05,
+#                                            label = paste("\u03C7", "^2 P =", chisquare_result, " (n =", number_of_SNPs, ")", sep = ""),
+#                                            size = 3) +
+#                                   theme_classic() +
+#                                   theme(axis.text.x = element_text(size = 8, angle = 45, hjust = 1),
+#                                         axis.title.y = element_blank(),
+#                                         legend.position = "none",
+#                                         panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+#                                         panel.background = element_rect(fill = "transparent")) +
+#                                   xlab(paste("bp in", sig_contig_list[position])) +
+#                                   ylab("Allele frequencies") +
+#                                   ylim(0, 1) 
+#   
+# }
+# 
+# 
+# 
+# 
+# # print 13 plots on rows
+# do.call(grid.arrange, c(make_plot[1:2], 
+#                         nrow = 2,
+#                         left = "Frequency of most common allele"
+#                         )) %>% ggsave(filename = "suppl_figure_allele_freq_lollipop.png", width = 9, height = 6, dpi = 600)
+# 
+# do.call(grid.arrange, c(make_plot[3:4], 
+#                         nrow = 2, 
+#                         left = "Frequency of most common allele"
+#                         ))  %>% ggsave(filename = "suppl_figure_allele_freq_lollipop1.png", width = 9, height = 6, dpi = 600)
+# 
+# do.call(grid.arrange, c(make_plot[5:6], 
+#                         nrow = 2,
+#                         left = "Frequency of most common allele"
+#                         ))  %>% ggsave(filename = "suppl_figure_allele_freq_lollipop2.png", width = 9, height = 6, dpi = 600)
+# 
+# 
+# do.call(grid.arrange, c(make_plot[7:8], 
+#                         nrow = 2, 
+#                         left = "Frequency of most common allele"
+#                         ))  %>% ggsave(filename = "suppl_figure_allele_freq_lollipop3.png", width = 9, height = 6, dpi = 600)
+# 
+# do.call(grid.arrange, c(make_plot[9:10], 
+#                         nrow = 2, 
+#                         left = "Frequency of most common allele"
+#                         )) %>% ggsave(filename = "suppl_figure_allele_freq_lollipop4.png", width = 9, height = 6, dpi = 600)
+# 
+# do.call(grid.arrange, c(make_plot[11:12], 
+#                         nrow = 2, 
+#                         left = "Frequency of most common allele"
+#                         )) %>% ggsave(filename = "suppl_figure_allele_freq_lollipop5.png", width = 9, height = 6, dpi = 600)
+# 
+# do.call(grid.arrange, c(make_plot[12:13], 
+#                         nrow = 2, 
+#                         left = "Frequency of most common allele"
+#                         )) %>% ggsave(filename = "suppl_figure_allele_freq_lollipop6.png", width = 9, height = 6, dpi = 600)
+
+
+```
+
+```{r heatmap, eval = FALSE, echo = FALSE, warning = FALSE}
+# keep the snp ids in a vector
+snp_id <- as.vector(snp_matrix[, 1])
+
+# keep the position of the loci
+loci_and_position_table <- snp_matrix[, 1:2]
+colnames(loci_and_position_table ) <- c("SNPid", "position")
+
+# remove first two rows (uninformative, snp id and location)
+# head(snp_matrix)
+snp_matrix1 <- snp_matrix[, 3:ncol(snp_matrix)]
+
+# Turn the matrix on its side (rows = individuals, columns = loci)
+snp_matrix1t <- t(snp_matrix1)
+
+# change the sample names for biological names by sourcing the 46 colony names
+colnames(sample_list_df) <- "sample_name"
+colony_names <- as.character(sample_list_df$sample_name)
+
+# change 4 sample names to the right genotype
+colony_names <- gsub(pattern = "I27-N_I27-N", replacement = "I27-P_I27-P", x = colony_names)
+colony_names <- gsub(pattern = "A56-N_A56-N", replacement = "A56-M_A56-M", x = colony_names)
+
+# make the sample names in the matrix row biologically meaningful
+row.names(snp_matrix1t) <- colony_names
+
+# make the snp_id in the matrix column meaningful
+colnames(snp_matrix1t) <- snp_id
+
+# subset the colony names for each genotype
+M <- as.character(colony_names[grep("M$", colony_names)])
+M_sample_num <- length(M)
+P <- as.character(colony_names[grep("P$", colony_names)])
+P_sample_num <- length(P)
+# reorder the rows by population - now number of individuals is 112
+snp_matrix2 <- snp_matrix1t[c(M, P), ]
+# check the different types of genotypes by uncommenting the following line
+# unique(as.vector(unlist(snp_matrix2))) 
+# "0/1" "0/0" "1/1"
+# 0/0: Reference
+# 0/1: 1 alternative allele
+# 1/1: 2 alternative alleles
+# transform the matrix content so that genotypes are coded as alternative allele count
+# example: in the vcf file 0|0 means that both alleles are reference 
+# so I code this as 0 alternative alleles
+snp_matrix2 <- as.matrix(snp_matrix2)
+snp_matrix2[snp_matrix2 == "0/0"] <- 0 
+snp_matrix2[snp_matrix2 == "0/1"] <- 1
+snp_matrix2[snp_matrix2 == "1/1"] <- 2
+
+# sanity check: genotypes are changed into the wanted code (but character class)
+# snp_matrix2[1:2, 1:2]
+# change class of each genotype, from character to numeric
+snp_matrix2df <- as.data.frame(apply(snp_matrix2, 2, as.numeric), row.names = rownames(snp_matrix2))
+
+# obtain snp matrix just for the significant SNPs
+sig_snp_mat <- snp_matrix2df[, colnames(snp_matrix2df) %in% sig_snp_vec]
+
+# create vector with names of samples for each social type
+mono_samples <- grep(pattern = "-M", x = rownames(sig_snp_mat), value = TRUE)
+poly_samples <- grep(pattern = "-P", x = rownames(sig_snp_mat), value = TRUE)
+
+
+# separate matrix by gyny
+sig_snp_mat_M <- subset(sig_snp_mat, subset = rownames(sig_snp_mat) %in% mono_samples)
+sig_snp_mat_P <- subset(sig_snp_mat, subset = rownames(sig_snp_mat) %in% poly_samples)
+
+# calculate distances for each matrix
+M_dist_mat <- dist(sig_snp_mat_M, method = "euclidean")
+P_dist_mat <- dist(sig_snp_mat_P, method = "euclidean")
+
+# cluster those distances for each matrix
+M_dendo <- hclust(M_dist_mat, method = "ward.D")
+P_dendo <- hclust(P_dist_mat, method = "ward.D")
+
+# obtain global row order from distance clustering study
+row_order <- c(M_dendo$labels[M_dendo$order], P_dendo$labels[P_dendo$order])
+
+# re-order sig_snp_mat by row 
+sig_snp_mat_reordered <- sig_snp_mat[row_order, , drop = FALSE]
+
+# prepare the data for ggplot geom_tile
+# make a long format snp matrix
+sig_snp_df <- as.data.frame(matrix(NA, nrow = (length(rownames(sig_snp_mat_reordered)) * length(colnames(sig_snp_mat_reordered))), ncol = 3))
+# name columns
+colnames(sig_snp_df) <- c("sample_name", "SNP_name", "genotype")
+# fill sample name column
+sig_snp_df$sample_name <- rep(rownames(sig_snp_mat_reordered), each = length(colnames(sig_snp_mat_reordered)))
+# fill SNP name column
+sig_snp_df$SNP_name <- rep(colnames(sig_snp_mat_reordered), times = length(rownames(sig_snp_mat_reordered)))
+# keep vector of sample names
+sample_list_vec <- rownames(sig_snp_mat_reordered)
+# keep vector of SNP names
+snp_list_vec    <- colnames(sig_snp_mat_reordered)
+# create empty vector where genotype will be stored
+geno_vec        <- c()
+# looping through each sample
+for(sample_position in 1:length(sample_list_vec)){
+  # looping through each SNP
+  for(snp_position in 1:length(snp_list_vec)){
+    # append genotype vector with the value select 
+    geno_vec <- c(geno_vec, sig_snp_mat_reordered[rownames(sig_snp_mat_reordered) %in% sample_list_vec[sample_position], colnames(sig_snp_mat_reordered) %in% snp_list_vec[snp_position]])
+  }
+}
+# fill genotype name column
+sig_snp_df$genotype <- geno_vec
+
+# three colours that are color-blind friendly
+col.plot <- c("#F0E442", "#0072B2", "#CC79A7")
+
+# The samples are ordered by social type, and the Name variable converted to a factor that ensures proper sorting of the plot.
+sig_snp_df$sample_name <- factor(sig_snp_df$sample_name, levels = row_order)
+sig_snp_df$genotype <- factor(sig_snp_df$genotype)
+plot_title  <- "154 interesting SNPs in whole dataset"
+xaxis_label <- "SNP"
+yaxis_label <- "Individual"
+ggplot(sig_snp_df, aes(SNP_name, sample_name, z = genotype)) +
+  geom_tile(aes(fill = genotype)) +
+  labs(title = plot_title, x = xaxis_label, y = yaxis_label) +
+  theme_classic() +
+  theme(axis.text.y = element_text(size = 4),
+        axis.text.x = element_blank()) +
+  scale_fill_manual(values = col.plot)
+
+```
+
+```{r fisher manhattan coding non coding part 2, eval = TRUE, echo = FALSE}
+# let's zoom in
+# Plot first few contigs adjusted values
+man_title <- paste("Fisher test for SNPs in 10 longest contig, maf > 5%,\n 100% sample support, p-values adjusted")
+man_xlab  <- paste("10 longest contigs ordered by length, coding and non coding")
+em_manhattan(subset(plink_output_fisher_coding_non_coding, subset = contig_rank_by_length %in% sort(unique(plink_output_fisher_coding_non_coding$contig_rank_by_length))[1:10]),
+          chr            = "contig_rank_by_length",
+          bp             = "BP",
+          p              = "adj_pvalue",
+          snp            = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          main           = man_title,
+          xlab           = man_xlab,
+          highlight      = c(sig_snp_vec, interesting_snp_vec))
+
+# Plot contigs with significant non-coding SNPS
+non_coding_with_sig_snp_contig_vec <- unique(subset(plink_output_fisher_coding_non_coding, adj_pvalue <= 0.05, select = CHR)[, 1])
+man_title <- paste("Fisher test for SNPs in contigs with significant SNPs, maf > 5%,\n 100% sample support, p-values adjusted")
+man_xlab  <- paste("contigs ordered by length, coding and non coding")
+em_manhattan(subset(plink_output_fisher_coding_non_coding, subset = CHR %in% non_coding_with_sig_snp_contig_vec),
+          chr            = "contig_rank_by_length",
+          bp             = "BP",
+          p              = "adj_pvalue",
+          snp            = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          main           = man_title,
+          xlab           = man_xlab,
+          highlight      = c(sig_snp_vec, interesting_snp_vec))
+
+
+# zoom in to the lowest rank
+# Plot contigs with significant non-coding SNPS
+man_title <- paste("Two contigs have significant non-coding SNPs near an interesting coding SNP")
+man_xlab  <- paste("contigs ordered by length, coding and non coding")
+em_manhattan(subset(plink_output_fisher_coding_non_coding, subset = CHR %in% non_coding_with_sig_snp_contig_vec & contig_rank_by_length %in% c("343", "458", "965", "1072")),
+          chr            = "contig_rank_by_length",
+          bp             = "BP",
+          p              = "adj_pvalue",
+          snp            = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          main           = man_title,
+          xlab           = man_xlab,
+          highlight      = c(sig_snp_vec, interesting_snp_vec))
+# contig_1576 and contig_1742 are potentially important?
+
+```
+
+13 non-coding SNPs are significant, scattered around in the genome.
+The purple SNPs above the threshold are from the non-coding regions.
+The purple SNPs below the threshold are the interesting SNPs from the coding regions: their adjusted p-value was below 1 but not significant.
+We could have expected that some non-coding SNPs were significant in a close distance to an interesting SNP (evidence of promoter variation?).
+This is the case for 2 contigs (rank 458 and rank 965)
+
+
+Let's see if we filter out variants that have a minor allele frequency of 20 or less.
+We start with 2,318 SNPs.
+Many SNPs have disappeared from the previous filter (maf > 0.05), including all SNPs from the second largest contig.
+
+```{r fisher manhattan maf 20, eval = TRUE, echo = FALSE, warnings = FALSE}
+fisher_snp_num <- nrow(plink_output_fisher_all_maf20)
+
+## Fisher: Correcting for multiple adjustments
+# After testing individually all 2,318 loci, we correct for multiple comparisons and retrieve loci with a p-value of less than 5%. 
+# We use a very conservative approach: the correction with false discovery rate by Benjamini and Hochberg method.
+# adjust the p-value using Benjamini and Hochberg method (ie FDR)
+# values are ordered the same way as the input
+plink_output_fisher_all_maf20$adj_pvalue <- p.adjust(plink_output_fisher_all_maf20$P, method = "BH")
+
+# Are any adjusted pvalues lower than 0.05 ?
+if(sum(plink_output_fisher_all_maf20$adj_pvalue <= 0.05) == 0){
+  #print("None of the adjusted pvalues are lower than 0.05")
+  # calculate how many SNPs have unadjusted p-values lower than 0.05
+  unadjusted_pvalues_num <- nrow(subset(plink_output_fisher_all_maf20, subset = P <= 0.05))
+  #print(paste(unadjusted_pvalues_num , "unadjusted p-values are lower than 0.05"))
+  #plink_output_fisher_all_maf20_ordered <- plink_output_fisher_all_maf20[order(plink_output_fisher_all_maf20$P), ]
+  # keep the top SNPs (lowest pvalues)
+  sig_snp_fisher_output <- subset(plink_output_fisher_all_maf20, subset = adj_pvalue < 1)
+  #print(paste("There are", nrow(sig_snp_fisher_output), "SNPs with adjusted p-value lower than 1"))
+  sig_snp_vec <- as.character(sig_snp_fisher_output$SNP)
+  sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+  #write.table(x = sig_snp_vec, file = "whole dataset_top_snp", quote = FALSE)
+} else {
+  #print(paste(sum(plink_output_fisher_all_maf20$adj_pvalue <= 0.05), "adjusted pvalues are lower than 0.05"))
+  sig_snp_fisher_output     <- subset(plink_output_fisher_all_maf20, subset = plink_output_fisher_all_maf20$adj_pvalue <= 0.05)
+  sig_snp_vec               <- as.character(sig_snp_fisher_output$SNP)
+  sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+  num_contig_with_sig_snp   <- length(unique(sig_snp_fisher_output$CHR))
+}
+# "None of the adjusted pvalues are lower than 0.05"
+# "93 unadjusted p-values are lower than 0.05"
+# "There are 63 SNPs with adjusted p-value lower than 1"
+# Prepare the data for length of contig
+# name columns
+# change class
+plink_output_fisher_all_maf20$CHR <- as.character(plink_output_fisher_all_maf20$CHR)
+# create 1 new column for contig length ranks in the large dataframe plink_output_fisher
+plink_output_fisher_all_maf20$contig_rank_by_length <- contig_length_df_ordered_with_ids$contig_rank_by_length[match(plink_output_fisher_all_maf20$CHR, contig_length_df_ordered_with_ids$contig_names)]
+
+# change class
+sig_snp_fisher_output$CHR <- as.character(sig_snp_fisher_output$CHR)
+# info just about the significant SNPs and their contigs
+sig_contig_fisher_output <- subset(plink_output_fisher_all_maf20, subset = plink_output_fisher_all_maf20$CHR %in% sig_snp_fisher_output$CHR)
+
+# manhattan function needs specific classes
+plink_output_fisher_all_maf20$BP                     <- as.numeric(plink_output_fisher_all_maf20$BP)
+plink_output_fisher_all_maf20$P                      <- as.numeric(plink_output_fisher_all_maf20$P)
+plink_output_fisher_all_maf20$adj_pvalue             <- as.numeric(plink_output_fisher_all_maf20$adj_pvalue)
+plink_output_fisher_all_maf20$contig_rank_by_length  <- as.numeric(as.character(plink_output_fisher_all_maf20$contig_rank_by_length))
+
+# # Plot whole manhattan unadjusted values
+# man_title <- paste("Fisher test for SNPs in whole dataset for maf > 20%,\n 100% sample support, p-values unadjusted")
+# man_xlab  <- paste("Rank of contigs ordered by length")
+# em_manhattan(plink_output_fisher_all_maf20,
+#           chr = "contig_rank_by_length",
+#           bp = "BP",
+#           p = "P",
+#           snp = "SNP",
+#           suggestiveline = -log10(0.05),
+#           genomewideline = FALSE,
+#           main = man_title,
+#           xlab = man_xlab)
+
+# Plot first three contigs unadjusted values
+man_title <- paste("Fisher test for SNPs in top largest contigs for maf > 20%,\n 100% sample support, p-values unadjusted")
+man_xlab  <- paste("Rank of contigs ordered by length")
+# subset to largest contigs only, basically we zoom in
+contig_rank_to_see <- 10
+plink_output_fisher_all_maf20_topcontigs <- subset(plink_output_fisher_all_maf20, subset = contig_rank_by_length <= contig_rank_to_see)
+em_manhattan(plink_output_fisher_all_maf20_topcontigs,
+          chr            = "contig_rank_by_length",
+          bp             = "BP",
+          p              = "P",
+          snp            = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          main           = man_title,
+          xlab           = man_xlab,
+          ylim = c(0, 3.3))
+
+
+
+# Plot whole manhattan adjusted values
+man_title <- paste("Fisher test for SNPs in whole dataset for maf > 20%,\n 100% sample support, p-values adjusted")
+man_xlab  <- paste("Rank of contigs ordered by length")
+em_manhattan(plink_output_fisher_all_maf20,
+          chr            = "contig_rank_by_length",
+          bp             = "BP",
+          p              = "adj_pvalue",
+          snp            = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          main           = man_title,
+          xlab           = man_xlab,
+          ylim           = c(0,2))
+
+# on the x axix, ticks from 1 to 10 correspond to contig rank based on their length (see head(contig_length_df_ordered_with_ids, 10))
+# each contig is visibly different in total length: the function computes the contig length based on the first and last BP value
+# thus contig rank 7 is very small because there is only one value for this contig after filtering (intra-population polymorphic, maf 20)
+# on the point distribution, the first contig has two columns of points
+# why are the SNPs arranged in two peaks? because all others have been filtered out
+# sort(unique(plink_output_fisher_all_maf20_topcontigs$contig_rank_by_length))
+#  6  3 10  1  4  8  7
+# plot the distribution of locations: 2 peaks visible here!
+# make a list of plot names
+my_plot <- list()
+# this is before removing intra-population monomorphic variants and setting maf levels
+my_plot[[1]] <- ggplot(subset(plink_output_with_fake_snp_noNA_10long_plus_fake, subset = contig_rank_by_length == 1), aes(BP)) +
+  ylim(0, 90) +
+  geom_histogram() +
+  labs(title = "before removing intra-population monomorphic variants and setting maf levels") +
+  theme_classic()
+# this is after removing intra-population monomorphic variants and setting maf level at 0.05
+my_plot[[2]] <-ggplot(subset(plink_output_fisher_all, subset = contig_rank_by_length == 1), aes(BP)) +
+  ylim(0, 90) +
+  geom_histogram() +
+  labs(title = "after removing intra-population monomorphic variants and setting maf level at 0.05") +
+  theme_classic()
+# this is after removing intra-population monomorphic variants and setting maf level at 0.2
+my_plot[[3]] <-ggplot(subset(plink_output_fisher_all_maf20, subset = contig_rank_by_length == 1), aes(BP)) +
+  ylim(0, 90) +
+  geom_histogram() +
+  labs(title = "after removing intra-population monomorphic variants and setting maf level at 0.2") +
+  theme_classic()
+
+# print all plots on 3 rows
+do.call(grid.arrange, c(my_plot, 
+                        nrow = 3, 
+                        top = "Filtering removed SNPs in the center of contig",
+                        bottom = "Longest contig in assembly"
+                        )) 
+```
+
+By filtering more variants out (maf > 20%), we removed 1,342 variants, including 91 variants with adjusted p-values below 1.
+The general trend is the same with maf > 5%: there is no supergene, only few scattered variants that are possiblyinteresting (adjusted p-values below 1)
+
+## Looking at the genome for contigs larger than 12,000 bp
+
+We look at contigs that could contain genes. 
+Based on Richards and Murali (2015), we could keep contigs that are longer than 10kb. The average gene size in Drosophila is 12-25kb.
+Based on the distribution of our contigs and the 
+
+```{r fisher manhattan contig 10kb, eval = TRUE, echo = FALSE}
+# plot the distribution of contig length
+ggplot(contig_length_df_ordered_with_ids, aes(contig_length)) +
+  geom_density() +
+  theme_classic()
+
+# set the cut-off point, under which contig are discarded
+contig_length_minimum_threshold <- 50000
+
+# subset for contigs longer than 10kb
+contig_length_df_ordered_with_ids_longcontig <- subset(contig_length_df_ordered_with_ids, subset = contig_length > contig_length_minimum_threshold)
+
+# subset plink output for those long contigs
+plink_output_fisher_all_longcontig <- subset(plink_output_fisher_all, subset = contig_rank_by_length %in% contig_length_df_ordered_with_ids_longcontig$contig_rank_by_length)
+
+
+# print(paste("with a size above the threshold of",
+#             contig_length_minimum_threshold,
+#             "bp, the contigs represent",
+#             round((sum(contig_length_df_ordered_with_ids_longcontig$contig_length) / 300000000) * 100),
+#             "% of the estimated genome size"))
+
+# with a size above the threshold of 10000 bp, the contigs represent 66 % of the estimated genome size
+# with a size above the threshold of 50000 bp, the contigs represent 59 % of the estimated genome size
+
+# Plot whole manhattan adjusted values
+man_title <- paste("Fisher test for SNPs in whole dataset for maf > 5%,\n 100% sample support, p-values adjusted")
+man_xlab  <- paste("contigs ordered by length, all above", contig_length_minimum_threshold,"bp")
+em_manhattan(plink_output_fisher_all_longcontig,
+          chr            = "contig_rank_by_length",
+          bp             = "BP",
+          p              = "adj_pvalue",
+          snp            = "SNP",
+          suggestiveline = -log10(0.05),
+          genomewideline = FALSE,
+          main           = man_title,
+          xlab           = man_xlab,
+          ylim           = c(0,2))
+
+```
+
+## In France: 20 significant SNPs
+
+When focusing exclusively on Bruniquel population (68 samples), there are 20 SNPs in 16 contigs that are significant (in purple in Figure 3).
+
+```{r Bruniquel Manhattan all the contigs, eval = TRUE, echo = FALSE}
+# adjust for multiple comparisons
+plink_output_fisher_bruniquel$adj_pvalue <- p.adjust(plink_output_fisher_bruniquel$P, method = "BH")
+
+# Are any adjusted pvalues lower than 0.05 ?
+if(sum(plink_output_fisher_bruniquel$adj_pvalue <= 0.05) == 0){
+  # print("None of the adjusted pvalues are lower than 0.05")
+  plink_output_fisher_bruniquel_ordered <- plink_output_fisher_bruniquel[order(plink_output_fisher_bruniquel$P), ]
+  # keep the top SNPs (lowest pvalues)
+  sig_snp_output_fisher_bruniquel       <- plink_output_fisher_bruniquel_ordered[1:10, ]
+  sig_snp_vec_bruniquel                 <- as.character(sig_snp_output_fisher_bruniquel$SNP)
+  sig_snp_output_fisher_bruniquel$CHR   <- as.character(sig_snp_output_fisher_bruniquel$CHR)
+} else {
+  sig_snp_output_fisher_bruniquel     <- subset(plink_output_fisher_bruniquel, subset = plink_output_fisher_bruniquel$adj_pvalue <= 0.05)
+  sig_snp_output_fisher_bruniquel$CHR <- as.character(sig_snp_output_fisher_bruniquel$CHR)
+  num_contig_with_sig_snps_bruniquel  <- length(unique(sig_snp_output_fisher_bruniquel$CHR))
+  # print(paste(sum(plink_output_fisher$adj_pvalue <= 0.05), "adjusted p-values are lower than 0.05, in", num_contig_with_sig_snps, "contigs"))
+  sig_snp_vec_bruniquel               <- as.character(sig_snp_output_fisher_bruniquel$SNP)
+}
+
+# are the significant SNPs in Bruniquel found in the main dataset?
+plink_output_fisher_all$SNP <- as.character(plink_output_fisher_all$SNP)
+print(paste(length(plink_output_fisher_all$SNP["SNP" %in% sig_snp_vec_bruniquel]), "Bruniquel significant SNPs are found in the whole dataset"))
+#"0 Bruniquel significant SNPs are found in the whole dataset"
+
+# Prepare the data for length of contig
+# name columns
+colnames(bruniquel_contig_length_df) <- c("contig_names", "contig_length")
+# change contig names from short to long form
+bruniquel_contig_length_df$contig_names_altered <- gsub(pattern = "Ppal_E.", x = bruniquel_contig_length_df$contig_names, replacement = "")
+bruniquel_contig_length_df$contig_names_altered <- gsub(pattern = "$", x = bruniquel_contig_length_df$contig_names_altered, replacement = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon")
+# order by length (decreasing)
+bruniquel_contig_length_df_ordered <- bruniquel_contig_length_df[order(-bruniquel_contig_length_df$contig_length), ]
+# make a small data.frame of contig names and rank (by decreasing contig length)
+bruniquel_contig_length_df_ordered_with_ids <- as.data.frame(cbind(as.character(bruniquel_contig_length_df_ordered$contig_names_altered),
+                                                   c(1:nrow(bruniquel_contig_length_df_ordered)),
+                                                   as.numeric(as.character(bruniquel_contig_length_df_ordered$contig_length))))
+# name columns
+colnames(bruniquel_contig_length_df_ordered_with_ids) <- c("contig_names", "contig_rank_by_length", "contig_length")
+# create new column for length ranks in the large dataframe plink_output_fisher
+plink_output_fisher_bruniquel$contig_rank_by_length <- bruniquel_contig_length_df_ordered_with_ids$contig_rank_by_length[match(plink_output_fisher_bruniquel$CHR, bruniquel_contig_length_df_ordered_with_ids$contig_names)]
+
+# manhattan function needs specific classes
+plink_output_fisher_bruniquel$BP                     <- as.numeric(plink_output_fisher_bruniquel$BP)
+plink_output_fisher_bruniquel$P                      <- as.numeric(plink_output_fisher_bruniquel$P)
+plink_output_fisher_bruniquel$adj_pvalue             <- as.numeric(plink_output_fisher_bruniquel$adj_pvalue)
+plink_output_fisher_bruniquel$contig_rank_by_length  <- as.numeric(as.character(plink_output_fisher_bruniquel$contig_rank_by_length))
+
+# Plot whole manhattan
+man_title <- paste("Figure 3: French SNPs,\n significant SNPs in purple")
+man_xlab  <- paste("contigs ordered by length")
+man_snp   <- sig_snp_vec_bruniquel 
+em_manhattan(plink_output_fisher_bruniquel, 
+          chr            = "contig_rank_by_length",
+          bp             = "BP", 
+          p              = "adj_pvalue", 
+          snp            = "SNP", 
+          suggestiveline = -log10(0.05), 
+          genomewideline = FALSE,
+          main           = man_title,
+          xlab           = man_xlab,
+          highlight      = man_snp)
+
+
+```
+
+The 20 significant SNPs in Bruniquel are absent in the whole dataset. 
+This means that the loci are either monomorphic in Italy or in Pyrenees.
+
+We next look at the frequency of the most common allele for those SNPs and their neighbouring SNPs.
+
+```{r heterozygosity level plot for 20 snps, eval = TRUE, echo = FALSE, warning = FALSE}
+# change class
+plink_output_fisher_bruniquel$CHR <- as.character(plink_output_fisher_bruniquel$CHR)
+
+# check length of those 20 contigs
+sig_contig_length <- subset(bruniquel_contig_length_df, subset = contig_names_altered %in% unique(as.character(
+        unlist(subset(plink_output_fisher_bruniquel, subset = adj_pvalue < 0.05, select = CHR)))))
+
+# preparation: make a file for bcftools to subset the VCF for only the 20 SNPs and their 25 neighbours on each side
+
+# obtain SNP names
+sig_snp_list <- unique(as.character(
+        unlist(subset(plink_output_fisher_bruniquel, subset = adj_pvalue < 0.05, select = SNP))))
+
+# obtain names of contigs with sig SNPs
+sig_contig_list <- gsub(x = sig_snp_list, pattern = ":.*", replacement = "")
+
+# make a result object
+temporary_region_file <- as.data.frame(matrix(NA, ncol = 3))
+
+# name columns
+colnames(temporary_region_file) <- c("CHR", "BP", "adj_pvalue")
+
+# loop through the sig contigs
+for(contig_position in 1:length(sig_contig_list)){
+  
+      # subset df for just this contig
+      test <- subset(plink_output_fisher_bruniquel,
+                     subset = CHR == sig_contig_list[contig_position])
+      
+      # change class
+      test$SNP <- as.character(test$SNP)
+      
+      # obtain the rank of the SNP in the contig
+      sig_snp_rank <- as.numeric(which(test$SNP == sig_snp_list[contig_position]))
+      
+      
+      if(sig_snp_rank >= 25){
+          # select 25 neighbouring SNPs on each side
+          temporary_region_file <- rbind(temporary_region_file,
+                                         test[(sig_snp_rank-25):(sig_snp_rank+25),
+                                              c("CHR", "BP", "adj_pvalue")])
+      } else {
+        # select all SNPs before the sig SNP, and up to 50 following SNPs
+          temporary_region_file <- rbind(temporary_region_file,
+                                         test[1:50, c("CHR", "BP", "adj_pvalue")])
+      }
+
+}      
+
+# remove the NA
+updated_region_file <- temporary_region_file[complete.cases(temporary_region_file), ]
+
+# rename columns for bcftools
+colnames(updated_region_file) <- c("CHROM", "POS", "adj_pvalue")
+
+# save for subsetting VCF prior to the heatmap
+write.table(x = updated_region_file,
+          file = "region-file-bruniquel-coding-only",
+          quote = FALSE,
+          row.names = FALSE,
+          sep = "\t")
+
+# Prepare the plots
+# aim: in x axis, the loci
+# in y axis, the frequency of the most common allele
+
+# in snp_matrix, I can obtain the most common genotype for a given locus, either 0/0 or 0/1 or 1/1
+
+# remove first two columns (SNP names)
+snp_matrix_geno <- snp_matrix_bruniquel[ , 3:ncol(snp_matrix_bruniquel)]
+
+# change the sample names for biological names by sourcing the colony names
+colnames(sample_list_vec_bruniquel) <- "sample_name"
+
+# create a vector for names
+colony_names <- as.character(sample_list_vec_bruniquel$sample_name)
+
+# keep in vector the names of colony in each social type
+mono_samples <- grep(pattern = "-M", x = colony_names, value = TRUE)
+mono_samples <- c(mono_samples, "A56-N_A56-N")
+poly_samples <- grep(pattern = "-P", x = colony_names, value = TRUE)
+
+
+# name the SNP matrix: colony names for columns, SNP names for rows
+colnames(snp_matrix_geno) <- colony_names
+rownames(snp_matrix_geno) <- snp_matrix_bruniquel$V1
+
+# change genotype code
+snp_matrix_geno[snp_matrix_geno == "0/0"] <- 0 
+snp_matrix_geno[snp_matrix_geno == "0/1"] <- 1
+snp_matrix_geno[snp_matrix_geno == "1/1"] <- 2
+snp_matrix_geno[snp_matrix_geno == "./."] <- NA
+
+# collect all frequencies in a dataframe
+freq_mat <- matrix(NA, nrow = nrow(snp_matrix_geno), ncol = 2)
+
+# loop through each locus
+for(position in 1:nrow(snp_matrix_geno)){
+  
+  # subset to one locus
+  one_locus <- snp_matrix_geno[position, ]
+  
+  # transform to long format
+  one_locus_t <- as.data.frame(t(one_locus), stringsAsFactors = FALSE)
+  
+  # name the column
+  colnames(one_locus_t) <- "alt"
+  
+  # create a new column for reference allele
+  one_locus_t$ref <- 0
+  
+  # code the reference allele based on the alt allele code
+  # if the alt allele is coded 0, it means that the sample has 2 reference alleles
+  one_locus_t$ref[one_locus_t$alt == "0"] <- 2
+  
+  # if the alt allele is coded 1, it means that the sample has 1 reference allele
+  one_locus_t$ref[one_locus_t$alt == "1"] <- 1
+  
+  # if the alt allele is coded 2, it means that the sample has 0 reference allele
+  one_locus_t$ref[one_locus_t$alt == "2"] <- 0
+  
+  # change character to numeric
+  one_locus_t$alt <- as.numeric(one_locus_t$alt)
+
+  # obtain sum of each allele code
+  sum_alleles <- c(sum(one_locus_t$alt), sum(one_locus_t$ref))
+    
+  # find the most common allele in this locus
+  most_common_allele_column <- which.max(sum_alleles)
+  
+  # calculate the sum of most frequent allele for monogynous samples
+  sum_freq_allele_M <- sum(one_locus_t[rownames(one_locus_t) %in% mono_samples,
+                                       most_common_allele_column])
+  
+  # calculate the frequency of the most frequent allele in the monogynous samples (diploid, so 2 alleles * number of samples)
+  freq_common_allele_M <- sum_freq_allele_M / (length(mono_samples)*2)
+  
+  # calculate the sum of most frequent allele for polygynous samples
+  sum_freq_allele_P <- sum(one_locus_t[rownames(one_locus_t) %in% poly_samples,
+                                       most_common_allele_column])
+  
+  # calculate the frequency of the most frequent allele in the polygynous samples (diploid, so 2 alleles * number of samples)
+  freq_common_allele_P <- sum_freq_allele_P / (length(poly_samples)*2)
+  
+  # save the two frequencies
+  freq_mat[position, ] <- c(freq_common_allele_M, freq_common_allele_P)
+}
+
+# make into a dataframe
+freq_df <- as.data.frame(freq_mat, stringsAsFactors = FALSE)
+
+# name columns
+colnames(freq_df) <- c("Monogynous", "Polygynous")
+
+# add loci as new column
+freq_df$loci <- rownames(snp_matrix_geno)[1:nrow(freq_df)]
+
+# add contig as a new column
+freq_df$contig <- gsub(pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:.*", 
+                       x = freq_df$loci, replacement = "")
+
+# order original data by contig rank (length), then by snp position 
+plink_output_fisher_bruniquel <- plink_output_fisher_bruniquel[with(plink_output_fisher_bruniquel,
+                                                                                    order(contig_rank_by_length, BP)), ]
+
+# order loci in the same order as the manhattan plot
+freq_df <- freq_df[order(match(freq_df$loci, plink_output_fisher_bruniquel$SNP)), ]
+
+# give factor to loci for ggplot order
+freq_df$loci <- factor(freq_df$loci, levels = freq_df$loci)
+
+# make an extra column for signal
+freq_df$signal <- ifelse(freq_df$loci %in% sig_snp_list, "sig", "not_sig")
+
+# make an extra column for short snp name
+freq_df$short_SNP_name <- gsub(x = freq_df$loci,
+                               pattern = "contig.*_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:",
+                               replacement = "")
+
+freq_df$short_SNP_name <- gsub(x = freq_df$short_SNP_name,
+                               pattern = "[A-Z].*",
+                               replacement = "")
+
+# transform to factor so that x axis is ordered by location
+#freq_df$short_SNP_name <- factor(freq_df$short_SNP_name, levels = freq_df$short_SNP_name)
+
+# make a short name for contig
+sig_contig_list_short <- gsub(x = sig_contig_list, pattern = "_pilon.*", replacement = "")
+
+updated_region_file$CHROM_short <- gsub(x = updated_region_file$CHROM,
+                                        pattern = "_pilon.*",
+                                        replacement = "")
+
+# make 20 plots of freq, each for the contig
+# make a list of plot names
+make_plot <- list()
+
+# looping through each contig
+for(position in 1:length(sig_contig_list)){
+  
+  # subset for one contig
+  freq_df_1 <- subset(freq_df, subset = contig == sig_contig_list_short[position])
+  
+  # add p value for plot with updated_region_file
+  freq_df_1$adj_pvalue <- updated_region_file$adj_pvalue[match(freq_df_1$short_SNP_name, updated_region_file$POS)]
+  
+  # subset the df for only the non-significant SNPs
+  freq_df_1_not_sig <- subset(freq_df_1, subset = signal == "not_sig")
+  
+  # subset the df for only the significant SNP
+  freq_df_1_sig     <- subset(freq_df_1, subset = signal == "sig")
+  
+  # make a contigency table (rows are M, P; columns are non_sig, sig)
+  freq_mat <- rbind(c(freq_df_1_sig$Monogynous, mean(freq_df_1_not_sig$Monogynous)),
+                    c(freq_df_1_sig$Polygynous, mean(freq_df_1_not_sig$Polygynous)))
+
+  # for each contig I get a p-value if the observed values fit the expected values
+  chisquare_result <- round(chisq.test(freq_mat)$p.value, digits = 2)
+  
+  # number of SNPs
+  number_of_SNPs <- nrow(freq_df_1)
+  
+  # change class
+  freq_df_1$signal <- factor(freq_df_1$signal, levels = freq_df_1$signal)
+  
+  # add a column
+  freq_df_1$to_annotate <- ifelse(freq_df_1$signal == "not_sig",
+                                  "no annotation",
+                                  "annotation")
+  # keep plotting to the list
+  make_plot[[position]] <- ggplot(freq_df_1) +
+                                  geom_line(aes(x = short_SNP_name, y = adj_pvalue, group = 1),
+                                            colour = 'grey', linetype = "dashed") +
+                                  geom_segment(aes(x = short_SNP_name,
+                                                   xend = short_SNP_name,
+                                                   y = Monogynous,
+                                                   yend = Polygynous),
+                                               color = "lightgrey",
+                                               size = 0.4) +
+                                  geom_point(aes(x = short_SNP_name, y = Monogynous, colour = signal),
+                                             shape = 20, size = 1.5) +
+                                  geom_point(aes(x = short_SNP_name, y = Polygynous, colour = signal),
+                                             shape = 15, size = 1.5) +
+                                  scale_color_manual(values = c("black", "#018571")) +
+                                  annotate("text",
+                                           x = freq_df_1$short_SNP_name[4],
+                                           y = 0.05,
+                                           label = paste("\u03C7", "^2 P =", chisquare_result, " (n =", number_of_SNPs, ")", sep = ""),
+                                           size = 3) +
+                                  theme_classic() +
+                                  theme(axis.text.x = element_text(size = 6, angle = 45, hjust = 1),
+                                        axis.title.y = element_blank(),
+                                        legend.position = "none",
+                                        panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+                                        panel.background = element_rect(fill = "transparent")) +
+                                  xlab(paste("bp in", sig_contig_list_short[position])) +
+                                  ylab("Allele frequencies") +
+                                  ylim(0, 1) 
+  
+
+
+           
+}
+
+# print 20 plots on rows
+do.call(grid.arrange, c(make_plot[1:2], 
+                        nrow = 2,
+                        left = "Frequency of most common allele"
+                        )) %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+do.call(grid.arrange, c(make_plot[3:4], 
+                        nrow = 2, 
+                        left = "Frequency of most common allele"
+                        )) %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop1.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+do.call(grid.arrange, c(make_plot[5:6], 
+                        nrow = 2,
+                        left = "Frequency of most common allele"
+                        ))   %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop2.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+
+do.call(grid.arrange, c(make_plot[7:8], 
+                        nrow = 2, 
+                        left = "Frequency of most common allele"
+                        ))   %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop3.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+do.call(grid.arrange, c(make_plot[9:10], 
+                        nrow = 2, 
+                        left = "Frequency of most common allele"
+                        ))  %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop4.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+do.call(grid.arrange, c(make_plot[11:12], 
+                        nrow = 2, 
+                        left = "Frequency of most common allele"
+                        ))  %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop5.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+do.call(grid.arrange, c(make_plot[13:14], 
+                        nrow = 2, 
+                        left = "Frequency of most common allele"
+                        ))  %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop6.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+do.call(grid.arrange, c(make_plot[15:16], 
+                        nrow = 2, 
+                        left = "Frequency of most common allele"
+                        )) %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop7.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+do.call(grid.arrange, c(make_plot[17:18], 
+                        nrow = 2, 
+                        left = "Frequency of most common allele"
+                        ))  %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop8.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+do.call(grid.arrange, c(make_plot[19:20], 
+                        nrow = 2, 
+                        left = "Frequency of most common allele"
+                        ))  %>% ggsave(filename = "suppl_figure_allele_freq_Bruni_lollipop9.png",
+                                        width = 9,
+                                        height = 6,
+                                        dpi = 600)
+
+```
+
+## No correspondance between France and Italy
+When focusing exclusively on the Italian population (22 samples), there are no significant SNP.
+We compare the p-values of both French and Italian populations for their common SNPs.
+Out of the 20 significant SNPs, only 3 are common with Italy.
+We would have expected a low p-value for those 3 loci in the Italian dataset. But this is not the case (Figure 4).
+
+```{r Figure 2 Bruniquel vs Italy plot of p-values, eval = TRUE, echo = FALSE}
+# Section 1: evaluate Italy P values
+# values are ordered the same way as the input
+plink_output_fisher_italy$adj_pvalue <- p.adjust(plink_output_fisher_italy$P, method = "BH")
+
+# Are any adjusted pvalues lower than 0.05 ?
+if(sum(plink_output_fisher_italy$adj_pvalue <= 0.05) == 0){
+  #print("None of the adjusted pvalues are lower than 0.05")
+  # order the dataframe by increasing P value
+  plink_output_fisher_italy_ordered <- plink_output_fisher_italy[order(plink_output_fisher_italy$P), ]
+  
+  # keep the top 20 SNPs (lowest pvalues)
+  sig_snp_fisher_output_italy       <- plink_output_fisher_italy_ordered[1:20, ]
+  
+  # make a vector with those top SNP names
+  sig_snp_italy_vec                 <- as.character(sig_snp_fisher_output_italy$SNP)
+  
+  # update class
+  sig_snp_fisher_output_italy$CHR   <- as.character(sig_snp_fisher_output_italy$CHR)
+  } else {
+  sig_snp_fisher_output_italy     <- subset(plink_output_fisher_italy, subset = plink_output_fisher_italy$adj_pvalue <= 0.05)
+  
+  sig_snp_fisher_output_italy$CHR <- as.character(sig_snp_fisher_output_italy$CHR)
+  
+  num_contig_with_sig_snps_italy  <- length(unique(sig_snp_fisher_output_italy$CHR))
+  
+  print(paste(sum(plink_output_fisher_italy$adj_pvalue <= 0.05), "adjusted p-values are lower than 0.05, in", num_contig_with_sig_snps_italy, "contigs"))
+  
+  sig_snp_vec_italy               <- as.character(sig_snp_fisher_output_italy$SNP)
+}
+# None of the adjusted pvalues are lower than 0.05
+
+
+
+
+# Section 2: Comparing SNPs from Bruniquel and from Italy
+# update class
+plink_output_fisher_bruniquel$SNP     <- as.character(plink_output_fisher_bruniquel$SNP)
+
+plink_output_fisher_italy_ordered$SNP <- as.character(plink_output_fisher_italy_ordered$SNP)
+
+# combine both dataframes: snp name | italian p-value | bruniquel p-value
+bruni_italy_fisher_output             <- merge(plink_output_fisher_bruniquel, plink_output_fisher_italy_ordered, by = "SNP")
+
+
+# Section 3: Prepare the data for plotting
+# give colnames
+colnames(bruni_italy_fisher_output) <- c("SNP","CHR","BP",
+         "A1.bruni","F_A.bruni","F_U.bruni","A2.bruni","P.bruni","OR.bruni","adj_pvalue.bruni","contig_rank_by_length",
+         "CHR.ita","BP.ita","A1.ita","F_A.ita","F_U.ita","A2.ita","P.ita","OR.ita","adj_pvalue.ita")
+
+# add a column to mark the significant SNPs for Bruniquel
+bruni_italy_fisher_output$signal <- ifelse(bruni_italy_fisher_output$adj_pvalue.bruni <= 0.05, "assoc", "random")
+
+# Out of the 20 significant SNPs in Bruniquel, only 3 SNPs are found in Italy
+sig_snp_names <- as.character(unlist(subset(bruni_italy_fisher_output, subset = adj_pvalue.bruni <= 0.05, select = SNP)))
+
+# transform the data so that the smallest values are the largest (ie 0.05 becomes 1.30)
+bruni_italy_fisher_output$logP.bruni    <- -log10(bruni_italy_fisher_output$P.bruni)
+bruni_italy_fisher_output$logP.ita      <- -log10(bruni_italy_fisher_output$P.ita)
+bruni_italy_fisher_output$logPadj.bruni <- -log10(bruni_italy_fisher_output$adj_pvalue.bruni)
+bruni_italy_fisher_output$logPadj.ita   <- -log10(bruni_italy_fisher_output$adj_pvalue.ita)
+
+# change class
+bruni_italy_fisher_output$CHR <- as.character(bruni_italy_fisher_output$CHR)
+
+# make a short SNP name
+bruni_italy_fisher_output$short_SNP_name <- gsub(x = bruni_italy_fisher_output$SNP, 
+                                                 pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon",
+                                                 replacement = "")
+
+# Section 4: Estimate strength of relationship
+# Calculating Pearson's product-moment correlation
+# measure of strength of relationship
+# 0 = no linear relationship
+bruni_italy_fisher_output_pearson <- cor.test(bruni_italy_fisher_output$P.bruni,
+         bruni_italy_fisher_output$P.ita,
+         method = "pearson",
+         conf.level = 0.95)
+
+# estimated measure of association
+pearson_R <- paste("R =", round(bruni_italy_fisher_output_pearson$estimate, digits = 3)) 
+
+
+# Section 5: Prepare for plotting
+# labelling should not overlap non-annotated points
+bruni_italy_fisher_output$to_annotate <- bruni_italy_fisher_output$short_SNP_name
+bruni_italy_fisher_output$to_annotate[!bruni_italy_fisher_output$signal %in% "assoc"] <- ""
+
+# plot highlighting the significant SNPs in Bruniquel - SNP level
+x_title <- expression(paste("-log10(", italic("P"), ") within Bruniquel"))
+y_title <- expression(paste("-log10(", italic("P"), ") within Italy"))
+
+# make the plot
+ggplot(data = bruni_italy_fisher_output, aes(x = logP.bruni, y = logP.ita)) +
+  scale_color_manual(values = c("#018571", "black")) +
+  geom_point(aes(alpha = 0.1, color = signal, fill = signal, size = logP.bruni*logP.ita)) +
+  scale_radius(range = c(0, 3))+
+  labs(x = x_title, y = y_title) +
+  theme_classic() +
+  theme(legend.position = "none",
+        panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent")) +
+  # Add label using ggrepel to avoid overlapping
+  geom_label_repel(data = bruni_italy_fisher_output,
+                   aes(label = to_annotate),
+                   size               = 3,
+                   segment.color      = "#018571",
+                   segment.size       = 0.2,
+                   min.segment.length = 0.05,
+                   colour             = "black") +
+  # add Pearson's correlation estimate
+  geom_text(x = 6, y = 3.5, label = pearson_R)
+
+# save the plot for MS
+ggsave(filename = "figure2a.png", width = 8, height = 4, dpi = 600)
+```
+
+
+The size of the radius equals the product of the p-values of the association SNP-social type in each population.
+
+
+
+```{r Figure 2 Bruniquel vs Italy contig plot of p-values, eval = TRUE, echo = FALSE}
+# Looking at the difference between higest p-values between the two populations, at the contig level
+# make a vec with contig names
+contig_names_vec <- unique(bruni_italy_fisher_output$CHR)
+
+# names of contigs with a significant SNP in Bruniquel
+sig_contigs <- bruni_italy_fisher_output[bruni_italy_fisher_output$signal == "assoc", ]
+# make a vector of those contigs
+sig_contigs <- sig_contigs$CHR
+
+# gather info at contig level in a matrix
+bruni_italy_fisher_output_contig_level <- matrix(NA, ncol = 4, nrow = length(contig_names_vec))
+
+
+# gather info at contig level
+for(position in 1:length(contig_names_vec)){
+    # subset info to one contig
+    bruni_italy_fisher_output_onecontig <- subset(bruni_italy_fisher_output, subset = bruni_italy_fisher_output$CHR == contig_names_vec[position])
+    # select the lowest pvalue for each population
+    highest_log_bruni_P <- bruni_italy_fisher_output_onecontig$logP.bruni[which.max(bruni_italy_fisher_output_onecontig$logP.bruni)]
+    highest_log_italy_P <- bruni_italy_fisher_output_onecontig$logP.ita[which.max(bruni_italy_fisher_output_onecontig$logP.ita)]
+    # select the signal type for the contig
+    if(length(unique(bruni_italy_fisher_output_onecontig$signal)) > 1){
+      signal_type <- "assoc"
+    } else {
+      signal_type <- "random"
+    }
+
+    # keep relevant information for the contig-level plot
+    bruni_italy_fisher_output_contig_level[position, ] <- c(contig_names_vec[position], highest_log_bruni_P, highest_log_italy_P, signal_type)
+}
+
+# make into dataframe
+bruni_italy_fisher_output_contig_level <- as.data.frame(bruni_italy_fisher_output_contig_level)
+
+# name columns
+colnames(bruni_italy_fisher_output_contig_level) <- c("contig_name", "highest_log_bruni_P", "highest_log_italy_P", "signal")
+
+# change to numeric
+bruni_italy_fisher_output_contig_level$highest_log_bruni_P <- as.numeric(as.character(bruni_italy_fisher_output_contig_level$highest_log_bruni_P))
+bruni_italy_fisher_output_contig_level$highest_log_italy_P <- as.numeric(as.character(bruni_italy_fisher_output_contig_level$highest_log_italy_P))
+
+# make a short contig name
+bruni_italy_fisher_output_contig_level$short_contig_name <- gsub(x = bruni_italy_fisher_output_contig_level$contig_name, pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", replacement = "")
+
+
+# Calculating Pearson's product-moment correlation
+# measure of strength of relationship
+# 0 = no linear relationship
+bruni_italy_fisher_output_contig_level_pearson <- cor.test(bruni_italy_fisher_output_contig_level$highest_log_bruni_P,
+         bruni_italy_fisher_output_contig_level$highest_log_italy_P,
+         method = "pearson",
+         conf.level = 0.95)
+
+# estimated measure of association
+pearson_R <- paste("R =", round(bruni_italy_fisher_output_contig_level_pearson$estimate, digits = 3)) 
+
+# labelling should not overlap non-annotated points
+bruni_italy_fisher_output_contig_level$to_annotate <- bruni_italy_fisher_output_contig_level$short_contig_name
+bruni_italy_fisher_output_contig_level$to_annotate[!bruni_italy_fisher_output_contig_level$signal %in% "assoc"] <- ""
+
+# prepare diagonal gradient
+bruni_italy_fisher_output_contig_level$colour_value <- bruni_italy_fisher_output_contig_level$highest_log_bruni_P - bruni_italy_fisher_output_contig_level$highest_log_italy_P
+
+# plot highlighting the significant SNPs in Bruniquel
+x_title       <- expression(paste("within-Bruniquel -log10(", italic("P"), ")"))
+y_title       <- expression(paste("within-Vigliano -log10(", italic("P"), ")"))
+
+# plot the contig-level correlation between Italy and Bruniquel
+ggplot(data = bruni_italy_fisher_output_contig_level,
+       aes(x = highest_log_bruni_P, y = highest_log_italy_P)) +
+  
+  # fit colours black and green
+  scale_color_manual(values = c("#018571", "black")) +
+  
+  # set the points
+  geom_point(aes(alpha = 0.1,
+                 color = signal,
+                 fill  = signal,
+                 size  = highest_log_bruni_P * highest_log_italy_P),
+             shape = 15) +
+ 
+  # set the frame and axis types
+  labs(x = x_title, y = y_title) +
+  theme_classic() +
+  theme(axis.text.x        = element_text(size = 12),
+        axis.text.y        = element_text(size = 12),
+        axis.title.x       = element_text(size = 12),
+        axis.title.y       = element_text(size = 12),
+        legend.position  = "none",
+        panel.border     = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent"))
+  
+  # Add label using ggrepel to avoid overlapping
+  # geom_label_repel(data = bruni_italy_fisher_output_contig_level,
+  #                  aes(label = to_annotate),
+  #                  size               = 3,
+  #                  segment.color      = "#018571",
+  #                  segment.size       = 0.2,
+  #                  min.segment.length = 0.05,
+  #                  fill               = "white",
+  #                  box.padding        = 0.7) +
+  
+  # add Pearson's correlation estimate R = 0.443
+  #geom_text(x = 6, y = 0.1, label = pearson_R)
+  
+  # add 1:1 line
+  #geom_abline(intercept = 0, slope = 1)
+
+
+# save for MS
+ggsave(filename = "figure2b.png", width = 8, height = 4, dpi = 600)
+```
+
+The size of the square edge equals the product of the p-values of the association SNP-social type in each population.
+
+I also want to investigate the FST values between the two datasets: within-Bruniquel, within-Italy.
+The expectation is that for each locus, the FST value between monogynous and polygynous is low.
+The underlying hypothesis is that there is no genetic differentiation along the genome, regardless of the population structure.
+If the FST values differ between population, there is population structure.
+
+```{r Figure 2 Bruniquel and Italy site fst plot, eval = TRUE, echo = FALSE}
+
+# data: coding-only SNPs within each location, FST values between social types
+
+# name columns CHR SNP POS NMISS FST
+colnames(bruni_fst_df) <- c("contig", "snp_id" , "bp", "number_of_missing_samples", "fst")
+colnames(ita_fst_df)   <- c("contig", "snp_id" , "bp", "number_of_missing_samples", "fst")
+
+# make an id
+bruni_fst_df$snp_id <- paste(bruni_fst_df$contig,
+                         bruni_fst_df$bp,
+                         sep = "_")
+
+
+ita_fst_df$snp_id <- paste(ita_fst_df$contig,
+                         ita_fst_df$bp,
+                         sep = "_")
+
+
+# order loci like the Manhattan plot
+bruni_fst_df$ID_CHR <- don$ID_CHR[match(bruni_fst_df$contig, don$CHR)]
+ita_fst_df$ID_CHR   <- don$ID_CHR[match(ita_fst_df$contig, don$CHR)]
+bruni_fst_df <- bruni_fst_df[order(bruni_fst_df$ID_CHR), ]
+ita_fst_df <- ita_fst_df[order(ita_fst_df$ID_CHR), ]
+
+# add id for each snp, based on its location on contigs (order: larger to smaller contig)
+bruni_fst_df$id <- 1:nrow(bruni_fst_df)
+ita_fst_df$id <- 1:nrow(ita_fst_df)
+
+# negative FST = 0
+bruni_fst_df$fst[bruni_fst_df$fst < 0] <- 0
+ita_fst_df$fst[ita_fst_df$fst < 0] <- 0
+
+# make one plot for Bruniquel
+ggplot(bruni_fst_df,
+              aes(x = id, y = fst)) +
+  geom_point(size = 0.5, alpha = 0.5) +
+  theme_classic() +
+  xlab("Loci ordered from large to small contigs") +
+  ylab("FST") +
+  theme(axis.text.x = element_blank()) +
+  scale_y_continuous(limits = c(0, 1)) +
+  ggtitle("Bruniquel FST between monogyne and polygyne")
+
+# make one plot for Italy
+ggplot(ita_fst_df,
+       aes(x = id, y = fst)) +
+  geom_point(size = 0.5, alpha = 0.5) +
+  theme_classic() +
+  xlab("Loci ordered from large to small contigs") +
+  ylab("FST") +
+  ggtitle("Vigliano FST between monogyne and polygyne") +
+  theme(axis.text.x = element_blank()) +
+  scale_y_continuous(limits = c(0, 1))
+```
+
+```{r Figure 2 Bruniquel and Italy 5kb fst plot, eval = TRUE, echo = FALSE}
+
+# data: coding and non-coding contigs containing SNPs within each location
+# FST values between social types
+
+# name columns CHROM	BIN_START	BIN_END	N_VARIANTS	WEIGHTED_FST	MEAN_FST
+colnames(bruni_5kb_fst_df) <- c("contig", "window_start", "window_end", "nb_snps", "weight_fst", "mean_fst")
+colnames(ita_5kb_fst_df)   <- c("contig", "window_start", "window_end", "nb_snps", "weight_fst", "mean_fst")
+
+# make an id
+bruni_5kb_fst_df$window_id <- paste(bruni_5kb_fst_df$contig,
+                         bruni_5kb_fst_df$window_start,
+                         bruni_5kb_fst_df$window_end,
+                         sep = "_")
+
+
+ita_5kb_fst_df$window_id <- paste(ita_5kb_fst_df$contig,
+                         ita_5kb_fst_df$window_start,
+                         ita_5kb_fst_df$window_end,
+                         sep = "_")
+
+
+# order loci like the Manhattan plot
+bruni_5kb_fst_df$ID_CHR <- don$ID_CHR[match(bruni_5kb_fst_df$contig, don$CHR)]
+ita_5kb_fst_df$ID_CHR   <- don$ID_CHR[match(ita_5kb_fst_df$contig, don$CHR)]
+
+bruni_5kb_fst_df <- bruni_5kb_fst_df[order(bruni_5kb_fst_df$ID_CHR), ]
+ita_5kb_fst_df   <- ita_5kb_fst_df[order(ita_5kb_fst_df$ID_CHR), ]
+
+# add id for each window, based on its location on contigs (order: larger to smaller contig)
+bruni_5kb_fst_df$id <- 1:nrow(bruni_5kb_fst_df)
+ita_5kb_fst_df$id   <- 1:nrow(ita_5kb_fst_df)
+
+# negative FST = 0
+bruni_5kb_fst_df$mean_fst[bruni_5kb_fst_df$mean_fst < 0] <- 0
+ita_5kb_fst_df$mean_fst[ita_5kb_fst_df$mean_fst < 0]     <- 0
+
+# make one plot for Bruniquel
+ggplot(bruni_5kb_fst_df,
+              aes(x = id, y = mean_fst)) +
+  geom_point(size = 0.1) +
+  theme_classic() +
+  xlab("5kb-windows ordered from large to small contigs") +
+  ylab("FST") +
+  theme(axis.text.x = element_blank()) +
+  theme(legend.position  = "none",
+        panel.border     = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent")) +
+  scale_y_continuous(limits = c(0, 1)) +
+  ggtitle("Bruniquel FST between monogyne and polygyne")
+
+# save for MS
+ggsave(filename = "figure2c-fst-bruniquel-5kb.png", width = 8, height = 1, dpi = 300)
+
+# make one plot for Italy
+ggplot(ita_5kb_fst_df,
+       aes(x = id, y = mean_fst)) +
+  geom_point(size = 0.1) +
+  theme_classic() +
+  xlab("5kb-windows ordered from large to small contigs") +
+  ylab("FST") +
+  ggtitle("Vigliano FST between monogyne and polygyne") +
+  theme(axis.text.x = element_blank()) +
+  theme(legend.position = "none",
+        panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent")) +
+  scale_y_continuous(limits = c(0, 1))
+
+# save for MS
+ggsave(filename = "figure2c-fst-italy-5kb.png", width = 8, height = 1, dpi = 300)
+```
+
+```{r blbla}
+# 3 significant SNPS within Bruniquel, that are variable within Italy
+#"contig_1018_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_705753"
+#"contig_1213_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_20502" 
+#"contig_1213_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_20520"
+
+# # create 1 new column for Italy FST
+# bruni_fst_df$ita_fst <- ita_fst_df$fst[match(bruni_fst_df$id, ita_fst_df$id)]
+# 
+# # some loci are not variable in one given population
+# # so remove ita_fst == NA
+# fst_df <- bruni_fst_df[!is.na(bruni_fst_df$ita_fst), ]
+# 
+# # rename
+# colnames(fst_df)[colnames(fst_df) == "fst"] <- "bruni_fst"
+# 
+# # how many loci are involved here? 37735
+# # nrow(fst_df)
+# 
+# 
+# # Weir and Cox's FST is the most used FST estimator of Wright's FST
+# # It allows for multiple alleles (more than two)
+# # if the algorithm gives a negative value, it should be considered as 0 (ie no pop variation)
+# fst_df$bruni_fst[fst_df$bruni_fst < 0] <- 0
+# fst_df$ita_fst[fst_df$ita_fst < 0]     <- 0
+# 
+# # Out of the 20 significant SNPs in Bruniquel, only 3 SNPs are variable in Italy
+# # transform the snp names into id format
+# sig_snp_id <- gsub(x = sig_snp_names, pattern = ":", replacement = "_") %>% 
+#   gsub(x = ., pattern = "[A-Z],[A-Z]", replacement = "")
+# 
+# # add a column for signal
+# fst_df$signal <- ifelse(fst_df$id %in% sig_snp_id, "assoc", "random")
+# 
+# # set the axis labels
+# x_title <- "Within-Bruniquel FST values between social types"
+# y_title <- "Within-Vigliano FST values between social types"
+# 
+# # plot the FST value between Italy and Bruniquel
+# ggplot(data = fst_df,
+#        aes(x = bruni_fst, y = ita_fst)) +
+#   
+#   # fit colours black and green
+#   scale_color_manual(values = c("#018571", "black")) +
+#   
+#   # set the points
+#   geom_point(aes(alpha = 0.1,
+#                  color = signal,
+#                  fill  = signal)) +
+#  
+#   # set the frame and axis types
+#   labs(x = x_title, y = y_title) +
+#   theme_classic() +
+#   theme(legend.position  = "none",
+#         panel.border     = element_rect(colour = "black", fill = NA, size = 0.5),
+#         panel.background = element_rect(fill = "transparent"),
+#         aspect.ratio     = 1) +
+#   xlim(0, round(max(fst_df$ita_fst), digits = 1)) +
+#   ylim(0, round(max(fst_df$ita_fst), digits = 1))
+# 
+# 
+# # save for MS
+# ggsave(filename = "figure2c-fst.png", width = 4, height = 4, dpi = 300)
+```
+
+
+```{r Figure 2 Bruniquel and Italy sample bar plot, eval = TRUE, echo = FALSE}
+# Bruniquel P 54
+# Bruniquel M 16
+# Italy M 17
+# Italy P 7
+location_list <- c("Bruniquel", "Bruniquel", "Vigliano","Vigliano")
+social_list <- c("polygynous", "monogynous", "polygynous", "monogynous")
+colony_counts <- c(54, 16, 7, 17)
+
+sampling_info_df <- data.frame(location_list, social_list, colony_counts) 
+
+ggplot(sampling_info_df, aes(fill = social_list, y = colony_counts, x = location_list)) + 
+    geom_bar(position = "dodge", stat = "identity") +
+    ggtitle("Sample size") +
+    #scale_fill_viridis(discrete = T) +
+    theme_classic() +
+    xlab("") +
+    ylab("sample size") +
+    ggtitle(" ") +
+    theme(legend.title       = element_blank(),
+          axis.text.x        = element_text(size = 22),
+          axis.text.y        = element_text(size = 22),
+          axis.title.y       = element_text(size = 22)
+    )
+
+# save for MS
+ggsave(filename = "figure2c-sample-size-bar-plot.png", width = 8, height = 5, dpi = 300)
+
+```
+
+Here we compare 4,898 coding SNPs for their within-population FST values between two populations.
+In general there is more genetic differentiation in Vigliano than in Bruniquel (max FST = 0.46 in Italy, 0.24 in Bruniquel)
+
+## PCA
+
+The PCA data come from plink PCA that takes the variance-standardised relationship matrix drawn from VCF file.
+Looking through all PC axes up to 20, there is no split between monogynous and polygynous.
+
+```{r PCA plotting figure 1a, eval=TRUE, echo=FALSE}
+
+# update social forms
+pheidole.eigenvec$FID <- as.character(pheidole.eigenvec$FID)
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "A56-N"]    <- "A56-M"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "I27-N"]    <- "I27-P"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "andrea-N"] <- "andrea-P"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "muna-N"]   <- "muna-P"
+
+# update population data
+colnames(pop) <- c("FID", "population", "gyny")
+
+# merge the two dataframes
+my_df <- merge(x = pheidole.eigenvec, y = pop, intersect(names(pheidole.eigenvec), names(pop)))
+my_df$population <- as.character(my_df$population)
+
+# remove Spain - 2 samples
+my_107_df <- my_df[!(my_df$population == "Spain"), ]
+
+# change gyny code for full word
+my_107_df$gyny <- gsub(x = my_107_df$gyny, pattern = "P", replacement = "Polygynous")
+my_107_df$gyny <- gsub(x = my_107_df$gyny, pattern = "M", replacement = "Monogynous")
+
+# remove NA
+my_107_df_no_NA <- my_107_df[complete.cases(my_107_df), ]
+
+# plot PC1 and PC2
+plot_title    <- paste("Genotype variation is somewhat explained by geography")
+x_title       <- paste("PC1 (2.77 %)")
+y_title       <- paste("PC2 (1.45 %)")
+ggplot(my_107_df_no_NA, aes(x = PC1, y = PC2, color = population, shape = gyny)) + 
+  geom_point(alpha = 0.4, size = 5) + 
+  # Bruniquel, Italy, Pyrenees
+  scale_color_manual(values = c("#a6611a","#d01c8b","#80cdc1")) +
+  #geom_text(aes(x = -0.05, y = 0.08, label = "Bruniquel"), colour = "black") +
+  #geom_text(aes(x = 0, y = 0, label = "Pyrenees"), colour = "black") +
+  #geom_text(aes(x = 0.17, y = 0.1, label = "Italy"), colour = "black") +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.text.x =  element_text(size = 12),
+        axis.text.y =  element_text(size = 12))
+ggsave(filename = "figure1_PC12.png", width = 4, height = 4, dpi = 600)
+
+# plot PC3 and PC4
+plot_title    <- paste("Genomic noise is present, no clear association here")
+x_title       <- paste("PC3 (1.30 %)")
+y_title       <- paste("PC4 (1.24 %)")
+ggplot(my_107_df_no_NA, aes(x = PC3, y = PC4, color = population, shape = gyny)) + 
+  geom_point(alpha = 0.4, size = 5) + 
+  # Monogynous orange f, Polygynous purple 9
+  scale_color_manual(values = c("#a6611a","#d01c8b","#80cdc1")) +
+  theme_classic() +
+  labs( x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent"),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.text.x =  element_text(size = 12),
+        axis.text.y =  element_text(size = 12))
+
+# save for MS
+ggsave(filename = "figure1_PC34_with_legend.png", width = 4, height = 4, dpi = 600)
+
+
+# cheeky way of making the legend for manhattan plot
+man_legend_df <- my_107_df_no_NA
+
+# remove one pop
+man_legend_df <- subset(man_legend_df, subset = population %in% c("Bruniquel", "Italy"))
+
+# change the name accordingly
+man_legend_df$population[man_legend_df$population == "Bruniquel"] <- "Significant"
+man_legend_df$population[man_legend_df$population == "Italy"] <- "Non-significant"
+man_legend_df$gyny[man_legend_df$gyny == "Monogynous"] <- "Coding"
+man_legend_df$gyny[man_legend_df$gyny == "Polygynous"] <- "Non-coding"
+
+ggplot(man_legend_df, aes(x = PC1, y = PC2, color = population, shape = gyny)) + 
+  geom_point(size = 5) + 
+  # Coding, non-coding
+  scale_color_manual(values = c("black", "#018571")) +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        legend.position = "bottom",
+        legend.title = element_blank())
+# save for MS
+ggsave(filename = "figure1_man_legend.png", width = 8, height = 4, dpi = 600)
+
+```
+# Conclusion
+We have presented here that there are no clear sign of social supergene in _Pheidole pallidula_.
+
+In our dataset of three populations, no SNP is significant with social type (Figure 2), which goes against the hypothesis of a cluster of SNPs (supergene).
+
+Within the largest population (Bruniquel, n = 68), 16 contigs contain 20 significant SNPs (Fisher test, adjusted p-value < 0.05; Figure 3).
+However these 16 significant SNPs from Bruniquel are either not found nor significant in Italy (second population, n = 22; Figure 4).
+It is possible that the comparison is hindered by mis-genotyping or sample size.
+
+
+
+

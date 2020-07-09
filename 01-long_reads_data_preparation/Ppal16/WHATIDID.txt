@@ -1,0 +1,41 @@
+#### PPAL16 basecalling
+# create a new directory in input and result for ppal 16
+
+# copy raw data in monthly-autoscratch
+rsync -r /data/archive/archive-SBCS-WurmLab/db/genomic/reads/Pheidole_pallidula/2018-01-Pheidole_nanopore/2018-01-26_ppal16_minion_run_data/* .
+
+# create an output file in monthly autoscratch
+mkdir ppal16_output
+
+# run in screen the basecalling
+. ~/2018-01-nanopore-basecalling/software/bin/activate
+{time ~/2018-01-nanopore-basecalling/software/bin/read_fast5_basecaller.py -r --flowcell FLO-MIN106 --kit SQK-LSK108 --output_format fastq --input ppal16/ --save_path ppal16_output --worker_threads 5 ; } 2> 2018-07-02-ppal16-time.txt
+
+# resulting stats:
+# info: Each FASTQ file may contain multiple reads. Each FASTQ file contains only reads from a specified run.
+# total number of reads:
+# number of processed files in pass: 345579
+cd workspace/pass
+HAHA=0
+for i in $(ls | grep ".fastq"); do
+MY_COUNT=`awk '{s++}END{print s/4}' $i`
+HAHA=`echo "$HAHA + $MY_COUNT" | bc`
+done
+echo $HAHA
+# number of processed files in fail: 50984
+
+# check in log how many files have 'error' linked to them
+cat pipeline.log | grep -c "Error"
+# 5451 so need to notify Divvya
+# how many base pairs are in the pass folder?
+cat *.fastq | paste - - - - | cut -f2 | wc -c
+1593809431 bp #5x of Pheidole genome...
+# how many base pairs are in the fail folder?
+cat *.fastq | paste - - - - | cut -f2 | wc -c
+172657807 bp #0.57x of Pheidole genome...
+# now copy fastq files and log files to results (ie out of temp, which is autoscratch)
+rsync -azv --human-readable --progress workspace/pass/*.fastq /data/archive/archive-SBCS-WurmLab/db/genomic/reads/Pheidole_pallidula/2018-01-Pheidole_nanopore/2018-01-26_ppal16_fastq_reads/.
+mv ../temp/output/workspace/pass/*.fastq .
+# size of pass folder uncompressed: 811M
+# size of fail folder uncompressed: 88M
+# size of both: 899M

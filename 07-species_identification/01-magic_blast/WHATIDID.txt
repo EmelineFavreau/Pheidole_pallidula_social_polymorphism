@@ -1,0 +1,136 @@
+##########################################################
+# Step 3: blast raw Illumina sequences against COX1 sequences
+# I was using NCBI Magic-Blast to BLAST raw Illumina sequences against COX1
+# sequences obtained from the BOLD database. Create an index using magic blast
+# https://github.com/wurmlab/comp_and_pop_bombus_genomes/blob/master/01_species_identification/run_magic_blast.sh
+# It complains if your FASTA headers (the BOLD database headers can be verbose)
+# are long so you may need to do some editing beforehand with 'sed' or 'tr'.
+mkdir 2019-01-23-magic_blast
+cd 2019-01-23-magic_blast
+mkdir input
+cd input
+ln -s ../../../input/2019-01-23-magic_blast/reference
+ln -s ~/db/genomic/reads/Pheidole_pallidula/2018-05-19-Ppal_115workers_mono_poly_europe_hiseq4000_3lanes/renamed/raw_reads/*.fastq.gz .
+cd ..
+mkdir result
+# copy Joe's script and updated the path to tool
+run_magic_blast_em.sh
+# takes 5 minutes for each sample
+./run_magic_blast_em.sh input/reference input/A01-P.R1.fastq.gz input/A01-P.R2.fastq.gz
+
+
+# the research did not work the first time around: first hit was an unknown pheidole sp.
+# I tried to search for "pallidula" in the reference, but it did not exist
+# so I copied the Moreau 2008 coi sequence from ncbi (https://www.ncbi.nlm.nih.gov/nuccore/EF518381.1?report=fasta) into the reference, and I will try the whole analysis again
+
+# cool, the first hit is EF518381.1 = Pheidole pallidula for A01-P
+
+# run this analysis for all samples
+./run_magic_blast_for_all.sh
+
+# aim: extracting top matches i.e. 100% sequence match and highest bitscore
+
+# get all Alignment composite scores
+cut -f 13
+
+# sort them by first field position only, based on numerical value (n), larger value first (r)
+sort -k1,1nr
+
+# obtain top one
+head -n 1
+
+head *.species.text
+
+# species that are definitely pallidula (ie EF518381.1 Corrie Moreau 2008, from France)
+wc -l  *.species.text | sort -k1nr | grep "1 " | cut -d " " -f 5 | xargs grep -E "EF518381.1" | cut -d "." -f 1 > pallidula_samples.txt
+wc -l pallidula_samples.txt  #49
+
+# species that are definitely sp (ie GBMIN76432-17) - all Italian or Corsican
+wc -l  *.species.text | sort -k1nr | grep "1 " | cut -d " " -f 5 | xargs grep -E "GBMIN76432-17" | cut -d "." -f 1 > sp_samples.txt
+wc -l sp_samples.txt  # 12
+
+# species with missing identification (CMR01-P, CU121-P)
+wc -l  *.species.text | sort -k1nr | grep "0 " | cut -d " " -f 5 | cut -d "." -f 1 > samples_wo_id.txt
+wc -l samples_wo_id.txt  # 2
+# the first criterion is the identity (has to be 100)
+# but in the case of CMR01, identity 100 and top score do not match
+# it is either identity 100 (score 116) OR top score 142 (identity 99.3197)
+# now need to think about which one is the most important
+awk '$3=="100"' CMR01-P.tab | wc -l
+top_bitscore="$(cut -f 13 CMR01-P.tab | sort -k1,1nr - | head -n 1 - )"
+awk '$3=="100"' CMR01-P.tab | awk '$13==90' -
+# first hit for identity = 100, but score = 90 is EF518381.1
+top_bitscore="$(cut -f 13 CU121-P.tab | sort -k1,1nr - | head -n 1 - )"
+145
+awk '$3=="100"' CU121-P.tab | awk '$13==100' -
+# first hit for identity = 100, but score = 100 is EF518381.1
+
+# samples that are species ambiguous
+wc -l  *.species.text | sort -k1nr | grep "2 " | cut -d " " -f 5 | cut -d "." -f 1 > ambiguous_samples.txt
+wc -l ambiguous_samples.txt #52
+samples=`less ambiguous_samples.txt`
+touch test
+while read -r sample; do
+  head -2 ${sample}.species.text >> test
+done <<< "$samples"
+# unique identifier?
+from the output, remove all leading whitespace with sed, take second column, sort, keep unique identifier
+cat test | sed -e 's/^[ \t]*//' | cut -d " " -f 2 | sort | uniq -c
+# there are 52 instances of "EF518381.1|Pheidole" and 52 instances of "GBMIN76432-17|Pheidole"
+# is it because there are two top queries? like 100% identity and top score?
+# yes
+
+# which samples have more hits for GB than EF?
+samples=`less ambiguous_samples.txt`
+mkdir ambiguous_samples
+while read -r sample; do
+  cp ${sample}.species.text ambiguous_samples/.
+done <<< "$samples
+# if "EF518381.1|Pheidole" is in first line, it is the most frequent hit
+grep -nr "EF518381.1|Pheidole" ambiguous_samples/* | grep -E "text:1:" | cut -d "/" -f 2| cut -d ":" -f 1 > ambiguous_samples/pallidula_most_frequent_list.txt
+ cat result/ambiguous_samples/pallidula_most_frequent_list.txt | cut -d "." -f1 > result/ambiguous_samples/ambiguous_pallidula.txt
+# if "EF518381.1|Pheidole" is in second line, it is the least frequent hit
+grep -nr "EF518381.1|Pheidole" ambiguous_samples/* | grep -E "text:2:" | cut -d "/" -f 2| cut -d ":" -f 1 > ambiguous_samples/sp_most_frequent_list.txt
+ cat result/ambiguous_samples/sp_most_frequent_list.txt | cut -d "." -f1 > result/ambiguous_samples/ambiguous_sp.txt
+
+# In summary, there were 115 samples to identify, based on 100 identity and top Blast score
+# 49 are definitely pallidula
+# 12 are definitely sp
+# 2 have missing ID, due to the stringency in the analysis (there are no hit that have both 100% identity and top score, just 99%)
+# 52 samples are ambiguous (dual hit pallidula and sp),
+#    of which 39 have most frequent hit as pallidula
+#             13 have most frequent hit as sp
+
+
+##########
+top_bitscore="$(cut -f 13 CMR01-P.tab | sort -k1,1nr - | head -n 1 - )"
+top_bitscore="$(cut -f 13 A01-P.tab | sort -k1,1nr - | head -n 1 - )"
+echo $top_bitscore
+142
+# keep the hits that have %100 identity (field 3)
+# out of those, keep the hits that have the top score (field 13)
+awk '$3=="100"' CMR01-P.tab | awk '$13=='$top_bitscore'' - | cut -f 2 - | sort | uniq -c | sort -k1,1nr - > "$output3".species.text
+awk '$3=="100"' A01-P.tab | awk '$13=='$top_bitscore'' -
+awk '$13=='$top_bitscore'' CMR01-P.tab | wc -l
+################
+# what is this? unnamed species - how does the two mitogenome look like?
+GBMIN76432-17|Pheidole sp. EPEM178|COI-5P|KJ141904
+
+# when aligning all sequences from reference against pallidula in web ncbi
+# top hit is GBMIN76432-17|Pheidole sp.
+# 92% identity,
+# e-value 0.0 = number of sequences aligning by chance
+# query cover 91%
+# length comparison: pallidula is 1052, sp is longer (1140)
+>GBMIN76432-17|Pheidole sp. EPEM178|COI-5P|KJ141904
+ATGAATAAATGATTATATTCAACTAACCACAAAGACATCGGAATACTTTATTTTATTTTTGCAATTTGATCAGGAATAATTGGTTCATCTATAAGAATAATTATTCGATTAGAATTAGGATCATGTAGTTCATTAATTAATAATGATCAAATTTACAATTCTATAGTTACAAGCCACGCTTTTATCATAATTTTTTTCATAGTAATGCCTTTCATAATTGGGGGATTTGGAAATTTTCTAGTCCCTCTCATGTTAGGCTCACCAGATATAGCCTACCCACGTATAAATAATATAAGATTTTGACTTTTACCGCCCTCTATTACGCTCCTTTTATTAGGAAGATTTATTAATTCAGGAGCTGGTACTGGATGAACAGTTTACCCCCCATTAGCTTCCAATGTTTTTCATAGAGGAGCCTCTATCGACCTATCCATCTTTTCCCTTCACATCGCAGGTATATCCTCCATTCTAGGGGCTATCAATTTTATTTCCACAATTATTAATATACATCATAAAAATTTCTCCATAGATAAAATTCCATTATTGGTATGATCAATCCTTATCACTGCAATTTTACTTCTTCTCTCCCTTCCAGTCCTTGCAGGAGCCATTACTATACTTCTCACCGACCGAAATTTAAATACTTCCTTCTTTGACCCCGCAGGAGGGGGAGATCCTATCCTCTATCAACACCTATTCTGATTTTTTGGCCACCCAGAAGTATATATTCTAATTCTCCCAGGATTCGGCCTAATTTCCCACATTATTATAAGAGAAAGAGGAAAGAAGGAAACTTTTGGATCTTTAGGAATAATTTATGCAATAATTGCTATTGGATTCTTAGGATTTATCGTCTGAGCTCATCATATATTTACTATCGGCCTTGACGTTGATACACGTGCCTACTTCACATCTGCAACTATAATTATTGCCATTCCTACAGGAATTAAAATTTTTAGGTGAGTTTCTACTCTTCATGGAATAAAAATAAATTATAATCCTACCCTCTGATGAGCAATAGGCTTTATTTTTTTATTTACTAGAGGAGGACTAACAGGAATTATACTATCTAACTCCTCTATTGACATTGTCCTCCACGATACCTATTATGTAGTGGCTCATTTTCATTATGTTCTTTCT
+>EF518381.1|Pheidole pallidula|voucher-RA0195-cytochrome-oxidase-subunit-I
+GATCTTATTTTATNTTTGCGATTTGATCAGGAATAATTGGCTCATCTATAAGAATAATTATTCGATTAGAATTAGGATCATGTGACTCACTAATTAATAATGATCAAATTTACAACTCTATAGTTACAAGCCACGCTTTTATTATAATTTTTTTTATAGTAATACCTTTCATAATTGGGGGATTTGGAAATTTTCTTGTCCCCCTCATACTAGGCTCACCGGATATAGCCTATCCACGTATAAATAATATAAGATTTTGACTCTTGCCCCCCTCTATTACTCTCCTTTTATTAGGAAGATTTATTAACTCAGGGGCCGGTACTGGGTGAACAGTTTACCCCCCATTAGCCTCCAATATTTTCCACAGAGGAGCTTCTATCGATCTATCCATCTTTTCCCTTCACATCGCAGGTATATCCTCCATCCTAGGAGCTATCAATTTTATTTCTACGATTATTAATATACATCATAAAAGTTTCTCCATAGACAAAATTCCATTATTAGTCTGATCAATCCTTATCACTGCAATTTTACTTCTTCTTTCCCTCCCAGTCCTTGCAGGAGCCATTACTATACTTCTCACGGACCGAAATTTAAATACTTCCTTCTTCGACCCTGCAGGAGGAGGAGACCCCATCCTATACCAACACCTATCNNGNTTTTTTGGTCACCCAGAAGTATATATTCTGATTCTCCCAGGATTTGGCCTAATTTCACATATTATCATAAGAGAAAGAGGGAAAAAAGAAACTTTTGGCTCTTTAGGTATAATTTATGCAATAATTGCTATTGGATTCCTAGGATTTATCGTCTGAGCTCATCACATATTTACTATCGGCCTTGACGTTGACACCCGCGCCTACTTTACATCTGCAACTATAATTATTGCCATCCCTACAGGAATTAAAATTTTTAGGTGAGTTTCTACTCTTCACGGAATAAAAATAAATTATAACCCTACCCTCTGATGAGCAATAGGATTTATTTTTTTATTTACCAGAGGAGGATTAACAGGAATCATATTATCTAACTCCTCTATTGATATTGTCCTT
+
+# lots of differences! alignment-screenshot.png
+# which one is the 'real' mitochondrion
+GWNJ-0842:298:GW1805231090:1:1101:15108:36381
+# 1 - blast the two mito sequences against Ppal_gnB reference. Obtain name of scaffold with highest hit.
+# 2 - open Ppal_gnB reference in IGV
+# 2 - search for mitochondrion EF518381.1|Pheidole pallidula and GBMIN76432-17|Pheidole sp.
+# 3 - see the read depth: is it real mitochondrion OR Numt?

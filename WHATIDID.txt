@@ -1,0 +1,213 @@
+# Pheidole analysis scripts
+
+.
+├── 01-long_reads_data_preparation
+│   ├── Phei2-Phei3-Phei4
+│   ├── Ppal15
+│   ├── Ppal16
+│   └── Ppal4
+├── 02-genome_assembly
+├── 03-quality_control_of_assembly
+├── 04-filtering_assembly_for_genic_regions
+├── 05-quality_control_of_raw_Illumina_reads
+├── 06-population_genetics_analysis
+│   ├── 01-mapping_reads_to_reference
+│   ├── 02-calling_variants
+│   ├── 03-association_tests
+│   │   ├── 01-coding_non_coding_108_samples
+│   │   ├── 02-coding_non_coding_bruniquel
+│   │   ├── 03-coding_non_coding_italy
+│   │   ├── 04-coding_non_coding_pyrenees
+│   │   └── 05-combining_analyses
+│   └── 04-simulation_test
+└── 07-species_identification
+    ├── 01-magic_blast
+    ├── 02-reduce_redundancy
+    └── 03-blast-top-mito-agst-ref
+
+# Organisation of directory and original source of code
+mkdir 01-long_reads_data_preparation
+
+mkdir 01-long_reads_data_preparation/Phei2-Phei3-Phei4
+
+cp /data/home/btx077/db/genomic/reads/Pheidole_pallidula/2017-03-Pheidole_nanopore/readme_pheidole_nanopore.txt 01-long_reads_data_preparation/Phei2-Phei3-Phei4/WHATIDID.txt
+
+mkdir 01-long_reads_data_preparation/Ppal4
+
+cp /data/home/btx077/2018-01-nanopore-basecalling/result/2018-02-05-albacore-ppal4/results/WHATIDID.txt 01-long_reads_data_preparation/Ppal4/.
+
+############################################
+mkdir 01-long_reads_data_preparation/Ppal15
+
+cp /data/home/btx077/2018-01-nanopore-basecalling/result/2018-02-06-albacore-ppal15/results/WHATIDID.txt 01-long_reads_data_preparation/Ppal15/.
+
+mkdir 01-long_reads_data_preparation/Ppal16
+
+cp /data/home/btx077/2018-01-nanopore-basecalling/result/2018-07-albacore-ppal16/WHATIDID.txt 01-long_reads_data_preparation/Ppal16/.
+
+############################################
+mkdir 02-genome_assembly
+
+cp /data/home/btx077/db/genomic/Pheidole_pallidula/2019-03-05-Ppal_E/source_directory/2019-02-19-Ppal_minion_flye/scripts/template.sh 02-genome_assembly/.
+
+cp /data/home/btx077/db/genomic/Pheidole_pallidula/2019-03-05-Ppal_E/source_directory/2019-02-19-Ppal_minion_flye/scripts/polish.sh 02-genome_assembly/.
+
+############################################
+mkdir 03-quality_control_of_assembly
+
+cp /data/home/btx077/2019-03-06-minion_flye_QC/summary_stats.Rmd 03-quality_control_of_assembly/.
+
+cp /data/home/btx077/2019-03-06-minion_flye_QC/uniref_fasta_headers_to_taxa.Rmd 03-quality_control_of_assembly/.
+
+cp /data/home/btx077/2019-03-06-minion_flye_QC/WHATIDID.txt 03-quality_control_of_assembly/.
+
+cp /data/home/btx077/2019-03-06-minion_flye_QC/lookup_unirefs.sh 03-quality_control_of_assembly/.
+
+cp /data/home/btx077/2019-03-06-minion_flye_QC/phylum_from_NCBI_taxid.R 03-quality_control_of_assembly/.
+
+
+############################################
+mkdir 04-filtering_assembly_for_genic_regions
+
+cp /data/home/btx077/2019-03-18-filter_PpalE_genic_regions/summary_stats.Rmd 04-filtering_assembly_for_genic_regions/.
+
+cp /data/home/btx077/2019-03-18-filter_PpalE_genic_regions/WHATIDID.txt 04-filtering_assembly_for_genic_regions/.
+
+############################################
+mkdir 05-quality_control_of_raw_Illumina_reads
+
+cp /data/home/btx077/2018-05-30-pheidole-raw-115samples/results/2018-05-fastqc-raw-data/WHATIDID.txt 05-quality_control_of_raw_Illumina_reads/.
+
+cp /data/home/btx077/2018-05-30-pheidole-raw-115samples/results/2018-05-fastqc-raw-data/fastqc_script_for_array.sh 05-quality_control_of_raw_Illumina_reads/.
+
+############################################
+mkdir 06-population_genetics_analysis
+
+mkdir 06-population_genetics_analysis/01-mapping_reads_to_reference
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/WHATIDID.txt 06-population_genetics_analysis/01-mapping_reads_to_reference/.
+
+mkdir 06-population_genetics_analysis/02-calling_variants
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-07-variant_calling/prepare-bams-for-freebayes.sh 06-population_genetics_analysis/02-calling_variants/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-07-variant_calling/WHATIDID.txt 06-population_genetics_analysis/02-calling_variants/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-07-variant_calling/bamaddrg.sh 06-population_genetics_analysis/02-calling_variants/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-07-variant_calling/e15-manual.sh 06-population_genetics_analysis/02-calling_variants/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-07-variant_calling/sambamba-alt-WHATIDID.txt 06-population_genetics_analysis/02-calling_variants/.
+
+mkdir 06-population_genetics_analysis/03-association_tests
+
+mkdir 06-population_genetics_analysis/03-association_tests/01-coding_non_coding_108_samples
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/assoc-analysis.Rmd 06-population_genetics_analysis/03-association_tests/01-coding_non_coding_108_samples/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/qual-investigation.R 06-population_genetics_analysis/03-association_tests/01-coding_non_coding_108_samples/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/exploring-pca-results.Rmd 06-population_genetics_analysis/03-association_tests/01-coding_non_coding_108_samples/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/WHATIDID.txt 06-population_genetics_analysis/03-association_tests/01-coding_non_coding_108_samples/.
+
+mkdir 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/exploring-pca-results.Rmd 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/assoc-analysis.Rmd 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/genome-coverage-all-between-MP-sliding-window.Rmd 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/calculate_mean_for_10_contigs.sh  06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/calculate_mean_for_all_contigs.sh 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/genome-coverage-between-MP-real.Rmd 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/calculate-mean.R 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/calculate-mean.sh 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/calculate-read-depth-for-all-samples.sh   06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/combine_all_read_calculation_into_one_file.sh  06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/genome-coverage-between-MP-sliding-window.Rmd 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/combine_read_calculation_into_one_file.sh 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/make-bed-files.R  06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/converage-normalised-bymedian.sh  06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-bruniquel-maf10percent/WHATIDID.txt 06-population_genetics_analysis/03-association_tests/02-coding_non_coding_bruniquel/.
+
+
+mkdir 06-population_genetics_analysis/03-association_tests/03-coding_non_coding_italy
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-italy-maf10percent/assoc-analysis.Rmd 06-population_genetics_analysis/03-association_tests/03-coding_non_coding_italy/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-italy-maf10percent/exploring-pca-results.Rmd 06-population_genetics_analysis/03-association_tests/03-coding_non_coding_italy/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-italy-maf10percent/WHATIDID.txt 06-population_genetics_analysis/03-association_tests/03-coding_non_coding_italy/.
+
+mkdir 06-population_genetics_analysis/03-association_tests/04-coding_non_coding_pyrenees
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-08-coding-only-pyrennees-maf10percent/assoc-analysis.Rmd 06-population_genetics_analysis/03-association_tests/04-coding_non_coding_pyrenees/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-08-coding-only-pyrennees-maf10percent/exploring-pca-results.Rmd 06-population_genetics_analysis/03-association_tests/04-coding_non_coding_pyrenees/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-08-coding-only-pyrennees-maf10percent/WHATIDID.txt 06-population_genetics_analysis/03-association_tests/04-coding_non_coding_pyrenees/.
+
+mkdir 06-population_genetics_analysis/03-association_tests/05-combining_analyses
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-06-05_sample-coverage.Rmd 06-population_genetics_analysis/03-association_tests/05-combining_analyses/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/current_summary.Rmd 06-population_genetics_analysis/03-association_tests/05-combining_analyses/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/expected_likelihood.Rmd 06-population_genetics_analysis/03-association_tests/05-combining_analyses/.
+
+mkdir 06-population_genetics_analysis/04-simulation_test
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/make-fake-homhet-snp.Rmd 06-population_genetics_analysis/04-simulation_test/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/make-fake-snp.Rmd 06-population_genetics_analysis/04-simulation_test/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/make-fake-Sol-snp.Rmd 06-population_genetics_analysis/04-simulation_test/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/assoc-analysis-homhet.Rmd  06-population_genetics_analysis/04-simulation_test/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/assoc-analysis.Rmd 06-population_genetics_analysis/04-simulation_test/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/create-vcf-whatidid.txt  06-population_genetics_analysis/04-simulation_test/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/exploring-homhet-pca-results.Rmd  06-population_genetics_analysis/04-simulation_test/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/WHATIDID-homhet.txt 06-population_genetics_analysis/04-simulation_test/.
+
+cp /data/home/btx077/2019-03-05-association_analysis_flye_assembly/result/2019-04-02-addfakesnp/WHATIDID.txt 06-population_genetics_analysis/04-simulation_test/.
+
+############################################
+mkdir 07-species_identification
+
+cp /data/home/btx077/2019-01-23-species-identification/WHATIDID.txt 07-species_identification/.
+
+mkdir 07-species_identification/01-magic_blast
+
+cp /data/home/btx077/2019-01-23-species-identification/result/2019-01-23-magic_blast/run_magic_blast_for_all.sh 07-species_identification/01-magic_blast/.
+
+cp /data/home/btx077/2019-01-23-species-identification/result/2019-01-23-magic_blast/summary.R 07-species_identification/01-magic_blast/.
+
+cp /data/home/btx077/2019-01-23-species-identification/result/2019-01-23-magic_blast/run_magic_blast_em.sh 07-species_identification/01-magic_blast/.
+
+cp /data/home/btx077/2019-01-23-species-identification/result/2019-01-23-magic_blast/WHATIDID.txt 07-species_identification/01-magic_blast/.
+
+mkdir 07-species_identification/02-reduce_redundancy
+
+cp /data/home/btx077/2019-01-23-species-identification/result/2019-01-23-reduce_redundancy/WHATIDID.txt 07-species_identification/02-reduce_redundancy/.
+
+mkdir 07-species_identification/03-blast-top-mito-agst-ref
+
+cp /data/home/btx077/2019-01-23-species-identification/result/2019-02-01-blast-top-mito-agst-ref/WHATIDID.txt 07-species_identification/03-blast-top-mito-agst-ref/.
+

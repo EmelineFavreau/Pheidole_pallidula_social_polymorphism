@@ -1,0 +1,46 @@
+# create a new directory in input and result for ppal4
+mkdir input/2018-02-05-albacore-ppal4
+# need to be in the directory to create soft link
+ ln -s ../../../.hive_mountpoint/SBCS-WurmLab/db/genomic/reads/Pheidole_pallidula/2017-10-Pheidole_nanopore/2017_10_18_Ppal4.tar.gz
+mkdir result/2018-02-05-albacore-ppal4/results
+ln -s input/2018-02-05-albacore-ppal4 result/2018-02-05-albacore-ppal4/input
+
+# check the number of files
+tar -tzf 2017_10_18_Ppal4.tar.gz > ppal4_tarfiles 2> ppal4_tarfiles.err
+less ppal4_tarfiles | grep -c ".fast5"
+# for ppal4 it is 67803
+
+# it looks like it won't accept compressed files when looking at the help
+# create a temp/2018-02-05-albacare-ppal4 folder in result (softlink to autoscratch)
+ln -s /data/autoScratch/monthly/btx077 temp
+# copied tar file from input to temp
+cp ~/2018-01-nanopore-basecalling/input/2018-02-05-albacore-ppal4
+# untaring the file in temp
+tar -xvf 2017_10_18_Ppal4.tar.gz
+# mkdir output where the output files from albacore will be going
+
+# how I want to proceed for all fast5 files of ppal4
+# size of folder uncompressed: 467KB
+# number of raw files: 67803
+
+screen
+. ~/2018-01-nanopore-basecalling/software/bin/activate
+{time ~/2018-01-nanopore-basecalling/software/bin/read_fast5_basecaller.py -r --flowcell FLO-MIN106 --kit SQK-LSK108 --output_format fast5,fastq --input 2017_10_18_Ppal4/ --save_path output --worker_threads 10 ; } 2> 2018-02-05-ppal4-time.txt
+deactivate
+# that took  4:11:31
+
+# info: Fast5 files are copies of the files found in the folder provided as the --input_path argument which have been modified to contain the results of the Albacore basecall, in addition to whatever they had before.
+# info: Each FASTQ file may contain multiple reads. Each FASTQ file contains only reads from a specified run. The default fastq filename is fastq_runid_{run_id}_{batch_counter}.fastq. For ppal14 it looks like there are 4 runs, could it be from the 4 starts?
+# number of processed files in pass: 20290
+HAHA=0
+for i in $(ls | grep ".fastq"); do
+MY_COUNT=`awk '{s++}END{print s/4}' $i`
+HAHA=`echo "$HAHA + $MY_COUNT" | bc`
+done
+echo $HAHA
+# number of processed files in fail: 38754
+# size of folder uncompressed:
+cat *.fastq | paste - - - - | cut -f2 | wc -c
+35250804 bp #1/10th of Pheidole genome...
+# now copy fastq files and log files to results (ie out of temp, which is autoscratch)
+mv ../temp/output/workspace/fail/*.fastq .

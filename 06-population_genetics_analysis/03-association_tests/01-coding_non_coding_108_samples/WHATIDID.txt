@@ -1,0 +1,991 @@
+#!/bin/sh
+
+###############################################################################
+### Project preparation ###
+module load bcftools/1.8
+module load vcftools/0.1.15
+module load R/3.5.1
+# tabix 0.2.5
+module load plink/1.9-170906
+
+mkdir input
+cd input
+ln -s ../../../input/2019-03-08-109samples-maf10percent/complete.vcf .
+cd ..
+
+mkdir result
+
+mkdir -p ~/monthly_autoScratch/2019-03-05-association_analysis_flye_assembly/2019-03-08-109samples-maf10percent
+
+ln -s ~/monthly_autoScratch/2019-03-05-association_analysis_flye_assembly/2019-03-08-109samples-maf10percent tmp
+
+# copy important files
+cp ~/2018-11-09-association_analysis_mixed_assembly/result/2019-02-06-109samples-maf10percent/pheno.txt .
+
+cp ~/2018-11-09-association_analysis_mixed_assembly/result/2019-02-06-109samples-maf10percent/exploring-pca-results.Rmd .
+
+cp ~/2018-11-09-association_analysis_mixed_assembly/result/2019-02-06-109samples-maf10percent/input/S2_pheidole_pop_paper.csv .
+
+cp ~/2018-11-09-association_analysis_mixed_assembly/result/2019-02-06-109samples-maf10percent/assoc-analysis.Rmd .
+
+todayanalysis="2019-02-06-flye-Pheidole"
+
+###############################################################################
+### Filtering vcf ###
+
+# Step 1: index the vcf
+# The input data file must be position sorted
+# tmux new -s bcftools; this task takes some times
+bcftools sort input/complete.vcf -T /tmp/ -o tmp/sorted-complete.vcf
+# compress by bgzip
+bgzip tmp/sorted-complete.vcf
+# index the vcf
+tabix -p vcf tmp/sorted-complete.vcf.gz
+
+## 1 - check the file visually and understand each variant info
+bcftools view -H tmp/sorted-complete.vcf.gz | head -1
+#GT: genotype at this type, 0/0 homozygote reference
+#DP: depth of coverage at sample level, unfiltered
+#AD: unfiltered allele depth
+#RO:Reference allele observation count
+#QR:Sum of quality of the reference observations
+#AO:Alternate allele observation count
+#QA:Sum of quality of the alternate observations
+#GL:Genotype Likelihood, log10-scaled likelihoods of the data given the called
+# genotype for each possible genotype generated from the reference and
+# alternate alleles given the sample ploidy
+
+## 2 - count number of lines without # to have an idea of number of SNPs
+grep -v "^#" input/complete.vcf | wc -l
+# 27006673 MinION
+# 29983468 Illumina
+
+## 3 - check sample list, not in alphabetical order because filtered by position
+bcftools query -l tmp/sorted-complete.vcf.gz
+# check quality High QUAL scores indicate high confidence calls
+bcftools query -f '%QUAL\n' tmp/sorted-complete.vcf.gz | sort | uniq -c \
+         > vcf-qual.txt
+bcftools query -f '%QUAL\n' tmp/sorted-complete.vcf.gz | sort | uniq -c \
+         | sort -k1 > vcf-qual2.txt
+bcftools query -f '%QUAL\n' tmp/sorted-complete.vcf.gz | sort | uniq -c \
+         | sort --key=1 --numeric-sort > vcf-qual3.txt
+
+## 4 - investigate read depth
+vcftools --gzvcf tmp/sorted-complete.vcf.gz \
+          --site-depth \
+          --out tmp/2019-02-06-109samples-maf10percent
+
+cat tmp/2019-02-06-109samples-maf10percent.ldepth | sort --key=3 \
+          > vcf-depth.txt
+
+vcftools --gzvcf tmp/sorted-complete.vcf.gz \
+          --site-mean-depth \
+          --out tmp/2019-02-06-109samples-maf10percent
+
+cat tmp/2019-02-06-109samples-maf10percent.ldepth.mean | sort --key=3 \
+          > vcf-depth-mean.txt
+
+cp tmp/*coverage.csv result/.
+
+## 5 - investigate which quality threshold to use
+qual-investigation.R
+
+## 6 - filtering options
+# only biallelic SNPs, phred quality > 30, 75% sample support
+# Exclude sites on the basis of the proportion of missing data
+# defined to be between 0 and 1, where 0 allows sites that are completely
+# missing and 1 indicates no missing data allowed)
+# filter out 6 samples that are outliers in mds:
+# CU132-P, I17-M, E39-M, E139-P, muna-N, andrea-N [outliers-samples.txt]
+# filter singletons: include only sites with a minor allele frequency of >0.05
+vcftools --gzvcf tmp/sorted-complete.vcf.gz \
+         --remove-indels \
+         --minQ 30 \
+         --max-missing 0.75 \
+         --min-alleles 2 \
+         --max-alleles 2 \
+         --remove outliers-samples.txt \
+         --maf 0.05 \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/2019-02-06-109samples-maf10percent
+# 812,760 out of a possible 27006673 Sites
+# 1640 seconds
+# 27 minutes
+
+# get sample names
+bcftools query -l tmp/2019-02-06-109samples-maf10percent.recode.vcf \
+              > tmp/${todayanalysis}-sample_names.txt
+
+
+# get variants
+grep -v "^#" tmp/2019-02-06-109samples-maf10percent.recode.vcf | cut -f 1 | sort | uniq -c > snp-per-contig.txt
+
+
+# copy to archive
+cd tmp
+
+rsync -avx --human-readable --progress 2019-02-06-109samples-maf10percent.recode.vcf ~/2018-05-illumina-pallidula-results/2018-11-09-association_analysis_mixed_assembly/2019-02-06-109samples-maf10percent/.
+
+rsync -avx --human-readable --progress ${todayanalysis}-sample_names.txt ~/2018-05-illumina-pallidula-results/2018-11-09-association_\
+analysis_mixed_assembly/2019-02-06-109samples-maf10percent/.
+
+# softlink to result
+cd ../result
+
+ln -s ~/2018-05-illumina-pallidula-results/2018-11-09-association_analysis_mixed_assembly/2019-02-06-109samples-maf10percent/2019-02-06-109samples-maf10percent.recode.vcf
+
+ln -s ~/2018-05-illumina-pallidula-results/2018-11-09-association_analysis_mixed_assembly/2019-02-06-109samples-maf10percent/${todayanalysis}-sample_names.txt
+
+cd ..
+
+
+###############################################################################
+## prune away LD snps indep-pairwise ##
+
+
+# step 1 assign chromosome-and-position-based IDs (currently not named)
+plink --vcf result/2019-02-06-109samples-maf10percent.recode.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --set-missing-var-ids @:#\$1,\$2 \
+      --make-bed \
+      --out tmp/pheidole-id
+
+# step 2 --make-founders
+# With no modifiers, --make-founders clears both parental IDs whenever at least
+#  one parent is not in the dataset, and the affected samples are now
+# considered founders.
+# Note: Skipping --make-founders since there are no nonfounders.
+plink --bfile tmp/pheidole-id \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --make-founders \
+      --pheno pheno.txt \
+      --make-bed \
+      --out tmp/pheidole-no-founder
+
+# step 3 - pruning away SNPs in LD
+# people seem to use 0.2 as a threshold
+# under a minute.   524,068 of 812,760  variants removed
+plink --bfile tmp/pheidole-no-founder \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --indep-pairwise 50 5 0.2 \
+      --out tmp/pheidole-snp-in-ld
+
+cp tmp/pheidole-snp-in-ld.prune.in result/.
+
+# step 4 - filter data by keeping only the SNPs that are not in disequilibrium
+# 288,692 variants and 109 people
+plink --bfile tmp/pheidole-id \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --extract tmp/pheidole-snp-in-ld.prune.in \
+      --make-bed \
+      --out tmp/pruned-pheidole-data
+
+cp tmp/pruned-pheidole-data.bim result/.
+cp tmp/pruned-pheidole-data.bed result/.
+cp tmp/pruned-pheidole-data.fam result/.
+
+
+
+###############################################################################
+## pca obtain kinship matrix ##
+
+# step 1 create a genome file - IBD will be calculated
+plink --bfile result/pruned-pheidole-data \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --genome \
+      --extract result/pheidole-snp-in-ld.prune.in \
+      --out tmp/pheidoleIBD
+
+# step 2 use --pca to generate an eigenvec file containing PCs
+# header adds a header line to the .eigenvec file(s)
+# --cluster uses IBS values calculated to perform complete linkage clustering
+# .cluster2 describes only the final cluster configuration
+plink --bfile result/pruned-pheidole-data \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --cluster \
+      --pca header \
+      --extract result/pheidole-snp-in-ld.prune.in \
+      --read-genome tmp/pheidoleIBD.genome \
+      --out tmp/pheidolePCA
+
+cp tmp/pheidolePCA* result/.
+
+# make sense of the pca eigenvalue and ultimately
+# how much of the variance is explained by each PC? PC1 8%, PC2 3%
+Rscript  exploring-pca-results.Rmd
+
+
+###############################################################################
+## run association test ##
+
+# Step 1: Perform the association analysis using 2 main PCs
+# from the eigenvec file as covariates
+# covariate can only be used with a regression model, here logistics --logistic
+plink --bfile result/pruned-pheidole-data \
+      --allow-extra-chr --allow-no-sex \
+      --pheno pheno.txt \
+      --covar result/pheidole.eigenvec.tops.csv \
+      --covar-name PC1,PC2 \
+      --logistic \
+      --out tmp/pheidole-109samples-LDpruned-maf0.05-snp-pvalues
+
+# Step 2: understanding the output of the model
+# ADD means the additive effects of allele dosage (counts of each allele)
+# the direction of the regression coefficient represents
+# the effect of each extra minor allele
+# (i.e. a positive regression coefficient means that
+# the minor allele increases risk/phenotype mean
+# PLINK will also output the beta-coefficients for the adjustment variables
+# that is why there are more lines than snps 866077
+wc -l tmp/pheidole-109samples-LDpruned-maf0.05-snp-pvalues.assoc.logistic
+# remove the lines about PC1 and PC2 815078
+grep ADD tmp/pheidole-109samples-LDpruned-maf0.05-snp-pvalues.assoc.logistic > \
+ tmp/pheidole-109samples-LDpruned-maf0.05-snp-pvalues.assoc.filtered.logistic
+# 288692 SNPs
+wc -l tmp/pheidole-109samples-LDpruned-maf0.05-snp-pvalues\
+.assoc.filtered.logistic
+
+# copy to result
+cp tmp/pheidole-109samples-LDpruned-maf0.05-snp-pvalues\
+.assoc.filtered.logistic result/.
+
+
+
+###############################################################################
+## association analysis ##
+
+# adjusting p-values from plink output
+# association test on each SNP for allele count per gyny group)
+Rscript assoc-analysis.Rmd
+
+
+
+
+
+
+
+
+
+
+
+
+
+# pruning the LD was a bit intense. Now relaxing the pruning:
+# step 3 - pruning away SNPs in LD
+# varying r2, how well the regression predictions approximate the real data
+# it usually varies between 0 and 1 (perfect fit)
+# people seem to use 0.2 as a threshold
+# I will try larger (should get more SNPs in)
+# under a minute.   448,563 of 812,760  variants removed
+plink --bfile tmp/pheidole-no-founder \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --indep-pairwise 50 5 0.3 \
+      --out tmp/pheidole-snp-in-ld-0.3
+
+cp tmp/pheidole-snp-in-ld-0.3.prune.in result/.
+
+# step 4 - filter data by keeping only the SNPs that are not in disequilibrium
+# 364,197 variants and 109 people
+plink --bfile tmp/pheidole-id \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --extract tmp/pheidole-snp-in-ld-0.3.prune.in \
+      --make-bed \
+      --out tmp/pruned-0.3-pheidole-data
+
+cp tmp/pruned-0.3-pheidole-data.bim result/.
+cp tmp/pruned-0.3-pheidole-data.bed result/.
+cp tmp/pruned-0.3-pheidole-data.fam result/.
+
+
+
+###############################################################################
+## pca obtain kinship matrix ##
+
+# step 1 create a genome file - IBD will be calculated
+plink --bfile result/pruned-0.3-pheidole-data \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --genome \
+      --extract result/pheidole-snp-in-ld-0.3.prune.in \
+      --out tmp/pheidole-0.3-IBD
+
+# step 2 use --pca to generate an eigenvec file containing PCs
+# header adds a header line to the .eigenvec file(s)
+# --cluster uses IBS values calculated to perform complete linkage clustering
+# .cluster2 describes only the final cluster configuration
+plink --bfile result/pruned-0.3-pheidole-data \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --cluster \
+      --pca header \
+      --extract result/pheidole-snp-in-ld-0.3.prune.in \
+      --read-genome tmp/pheidole-0.3-IBD.genome \
+      --out tmp/pheidole-0.3-PCA
+
+cp tmp/pheidole-0.3-PCA* result/.
+
+# make sense of the pca eigenvalue and ultimately
+# how much of the variance is explained by each PC? PC1 8%, PC2 3%
+Rscript  exploring-pca-results-03.Rmd
+
+
+###############################################################################
+## run association test ##
+
+# Step 1: Perform the association analysis using 2 main PCs
+# from the eigenvec file as covariates
+# covariate can only be used with a regression model, here logistics --logistic
+plink --bfile result/pruned-0.3-pheidole-data \
+      --allow-extra-chr --allow-no-sex \
+      --pheno pheno.txt \
+      --covar result/pheidole.0.3.eigenvec.tops.csv \
+      --covar-name PC1,PC2 \
+      --logistic \
+      --out tmp/pheidole-109samples-LDpruned0.3-maf0.05-snp-pvalues
+
+# Step 2: understanding the output of the model
+# ADD means the additive effects of allele dosage (counts of each allele)
+# the direction of the regression coefficient represents
+# the effect of each extra minor allele
+# (i.e. a positive regression coefficient means that
+# the minor allele increases risk/phenotype mean
+# PLINK will also output the beta-coefficients for the adjustment variables
+# that is why there are more lines than snps 1092592
+wc -l tmp/pheidole-109samples-LDpruned0.3-maf0.05-snp-pvalues.assoc.logistic
+# remove the lines about PC1 and PC2 815078
+grep ADD tmp/pheidole-109samples-LDpruned0.3-maf0.05-snp-pvalues.assoc.logistic > \
+ tmp/pheidole-109samples-LDpruned0.3-maf0.05-snp-pvalues.assoc.filtered.logistic
+# 364197 SNPs
+wc -l tmp/pheidole-109samples-LDpruned0.3-maf0.05-snp-pvalues.assoc.filtered.logistic
+
+# copy to result
+cp tmp/pheidole-109samples-LDpruned0.3-maf0.05-snp-pvalues.assoc.filtered.logistic result/.
+
+
+
+###############################################################################
+## association analysis ##
+
+# adjusting p-values from plink output
+# association test on each SNP for allele count per gyny group)
+Rscript assoc-analysis03.Rmd
+
+### Checking the read depth of the vcf 303082 reads are backing up one variant
+vcftools --vcf result/2019-02-06-109samples-maf10percent.recode.vcf --site-mean-depth --out tmp/read-depth.txt
+awk '{sum+=$2} END {print sum/NR}' tmp/read-depth.txt.ldepth.mean  
+
+
+###############################################################################
+## Obtaining data for SNP exploration ##
+
+# June 2019: we have some interesting SNPs in the coding regions.
+# we want to see if these interesting SNPs are in higher proportion when we take in account both coding and non-coding regions
+
+# update few things here
+# scratch space now is:
+mkdir -p ~/scratch/2019-03-05-association_analysis_flye_assembly/2019-03-08-109samples-maf10percent
+unlist tmp
+ln -s ~/scratch/2019-03-05-association_analysis_flye_assembly/2019-03-08-109samples-maf10percent tmp
+
+# Step 1: assign chromosome-and-position-based IDs (currently not named)
+plink --vcf result/2019-02-06-109samples-maf10percent.recode.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --set-missing-var-ids @:#\$1,\$2 \
+      --recode vcf-fid \
+      --out tmp/pheidole-id
+
+
+# Step 2: for each population, filter out the SNPs without 100% support and  monomorphic
+
+# keep only samples from Bruniquel
+cat S2_pheidole_pop_paper.csv | grep -E "Bruniquel" | cut -d "," -f 1 > bruniquel-colonies.txt
+
+# filter VCF
+vcftools --vcf tmp/pheidole-id.vcf \
+         --max-missing 1 \
+         --keep bruniquel-colonies.txt \
+         --maf 0.05 \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/bruniquel-100support-NOmonomorphic
+
+# obtain SNP IDs
+bcftools query -f '%ID\n' tmp/bruniquel-100support-NOmonomorphic.recode.vcf > bruniquel-snp.txt
+wc -l bruniquel-snp.txt
+# 74220 bruniquel-snp.txt
+
+# keep only samples from Italy
+cat S2_pheidole_pop_paper.csv | grep -E "Italy" | cut -d "," -f 1 > Italy-colonies.txt
+
+# filter VCF
+vcftools --vcf tmp/pheidole-id.vcf \
+         --max-missing 1 \
+         --keep Italy-colonies.txt \
+         --maf 0.05 \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/Italy-100support-NOmonomorphic
+
+# obtain SNP IDs
+bcftools query -f '%ID\n' tmp/Italy-100support-NOmonomorphic.recode.vcf > Italy-snp.txt
+
+wc -l Italy-snp.txt
+# 144638 Italy-snp.txt
+
+# keep only samples from Pyrenees
+cat S2_pheidole_pop_paper.csv | grep -E "Pyrenees" | cut -d "," -f 1 > Pyrenees-colonies.txt
+
+# filter VCF
+vcftools --vcf tmp/pheidole-id.vcf \
+         --max-missing 1 \
+         --keep Pyrenees-colonies.txt \
+         --maf 0.05 \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/Pyrenees-100support-NOmonomorphic
+
+# obtain SNP IDs
+bcftools query -f '%ID\n' tmp/Pyrenees-100support-NOmonomorphic.recode.vcf > Pyrenees-snp.txt
+wc -l Pyrenees-snp.txt
+# 351290 Pyrenees-snp.txt
+
+
+
+# Step 3: keep loci that are found in all populations
+sort bruniquel-snp.txt Italy-snp.txt Pyrenees-snp.txt | uniq -c | sort -n -k1 | awk '$1 == '3' {print $2}' > snp-list.txt
+
+# remove SNPs
+vcftools --vcf tmp/pheidole-id.vcf \
+         --snps snp-list.txt \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/2019-06-03-108samples-maf005-NOmonomorphic-100support
+# kept 14597 out of a possible 812760 Sites
+
+# Step 4: run a Fisher test of association for social type
+# standard case/control association analysis using Fisher's exact test to generate significance
+plink --vcf tmp/2019-06-03-108samples-maf005-NOmonomorphic-100support.recode.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --assoc fisher \
+      --out result/2019-06-03-108samples-maf005-NOmonomorphic-100support
+
+
+# Step 5: calculate length of each contig
+module load seqtk
+gzip -c -d ../2019-03-07-variant_calling/input/reference.fasta.gz | seqtk comp > c
+
+# keep only name of contig and nucleotide count
+cut -f 1,2 Ppal_E-contig-length > Ppal_E-contig-length-clean
+
+
+# Another step: ratio interesting SNPs / all SNPs
+# does this differ from just coding regions?
+# in ../current_summary.Rmd
+
+
+####
+# aim: making SNP matrix for the 13 contigs with significant SNPs
+
+todayanalysis="2019-08-12-thirteen-sig"
+
+module load bcftools
+module load plink
+
+# tmux new -s bcftools; this task takes some times
+bcftools sort input/complete.vcf -T /tmp/ -o tmp/sorted-complete.vcf
+
+# compress by bgzip
+bgzip tmp/sorted-complete.vcf
+
+# index the vcf
+tabix -p vcf tmp/sorted-complete.vcf.gz
+
+# give SNP names
+plink --vcf tmp/sorted-complete.vcf.gz \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --set-missing-var-ids @:#\$1,\$2 \
+      --recode vcf-fid \
+      --out tmp/${todayanalysis}-id
+
+# compress by bgzip
+bgzip tmp/${todayanalysis}-id.vcf
+
+# index the vcf
+tabix -p vcf tmp/${todayanalysis}-id.vcf.gz
+
+# copy in the list of contig and position
+#(13 SNPs and their 25 neighbours from each side)
+cp ../region-file .
+
+# with vim add a hash key in front of headers
+
+# subset vcf for just the SNPs needed
+bcftools view tmp/${todayanalysis}-id.vcf.gz --regions-file region-file > tmp/${todayanalysis}-109samples-maf10percent.recode.vcf
+
+# obtain snp matrix for R script of frequency of common allele
+bcftools query -f '%ID\t%POS[\t%GT]\n' tmp/${todayanalysis}-109samples-maf10percent.recode.vcf > result/${todayanalysis}-snp_matrix.txt
+
+# obtain sample vec
+bcftools query -l tmp/${todayanalysis}-109samples-maf10percent.recode.vcf \
+              > result/${todayanalysis}-sample_names.txt
+
+# checking the filtering
+#bcftools query -f '%CHROM\n' tmp/${todayanalysis}-109samples-maf10percent.recode.vcf
+
+# analysis of frequency of common allele and genotype heatmap is in
+# ../current_summary.Rmd
+
+
+### 
+# aim: find the top blast hit for each of the thirteen SNPs
+
+todayanalysis="2019-12-30-thirteen-sig"
+
+module load bedtools
+
+# obtain names of significant SNPs
+cp ../thirteen-sig-snps .
+
+# make a BED file with each contig name, 200 nucleotides to the right and left of the SNP
+# CHROM Start End
+Ppal_E.contig_123 791736 792236
+Ppal_E.contig_1277 117057 117457
+Ppal_E.contig_1383 863344 863744
+Ppal_E.contig_1400 164082 164582
+Ppal_E.contig_1239 476678 477078
+Ppal_E.contig_1096 104819 105219
+Ppal_E.contig_384 386944 387344
+Ppal_E.contig_1831 354969 355369
+Ppal_E.contig_1940 242848 243248
+Ppal_E.contig_1576 194342 194742
+Ppal_E.contig_1243 110275 110675
+Ppal_E.contig_1742 7374 7774
+Ppal_E.contig_386 30784 31184
+
+# soft link assembly reference to input
+cd input
+ln -s ~/db/genomic/Pheidole_pallidula/2019-03-05-Ppal_E/Ppal_E.fasta .
+cd ..
+
+# bedtools getfasta extracts sequences from the reference FASTA file for each of the intervals defined in a BED file.
+bedtools getfasta -fi input/Ppal_E.fasta \
+                  -bed 2019-12-30-thirteen-sig.BED \
+                  -fo result/${todayanalysis}.fasta
+
+# copy the resulting fasta into blast nucleotide (web blastnt Highly similar sequences (megablast); default parameters)
+# only two pallidula sequences have hits, the rest have none.
+# the two hits do not target the SNP, but 150 nucleotides away from the SNP
+
+# second test with a blastn (“somewhat similar”)
+# all pallidula sequences have hits
+# most of them have ant hits (ie probably not endosymbiont)
+# some have other taxa (endosymbiont?)
+# some have no hits on the variant locus (pallidula-specific? unknown endosymbiont?)
+
+
+
+
+###############################################################################
+### Monday 20th April 2020
+## I need a PLINK fisher output for the following file
+pheidole-109samples-LDpruned0.3-maf0.05-snp-pvalues
+
+# ultimate aim: test harmonic mean p-value as an independent test of association
+
+# run a Fisher test of association for social type
+# standard case/control association analysis using Fisher's exact test to generate significance
+plink --bfile result/pruned-0.3-pheidole-data \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --assoc fisher \
+      --out result/2020-04-20_108samples-maf005-NOmonomorphic-LDpruned-0.3
+
+# check number of SNPs: 364198
+wc -l result/2020-04-20_108samples-maf005-NOmonomorphic-LDpruned-0.3.assoc.fisher
+
+
+
+
+
+###############################################################################
+### 2020-05-04 - filtering tests
+
+# Start with 812,760 SNPs (minQ >30, biallelic, 108 samples, maf>0.05, 75% sample support)
+# keep polymorphic SNPs within the population (regarless of sample support)
+
+
+# Step 1: assign chromosome-and-position-based IDs (currently not named)
+
+plink --vcf result/2019-02-06-109samples-maf10percent.recode.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --set-missing-var-ids @:#\$1,\$2 \
+      --recode vcf-fid  \
+      --out tmp/pheidole-id
+
+
+# take the INFO from original VCF and paste into the new VCF
+grep -v "#" result/2019-02-06-109samples-maf10percent.recode.vcf | cut -f 8 > tmp/INFO.txt
+
+grep -v "#" tmp/pheidole-id.vcf | cut -f 1-7 > tmp/pheidole-id-first.vcf
+
+grep -v "#" tmp/pheidole-id.vcf | cut -f 9- > tmp/pheidole-id-second.vcf
+
+paste tmp/pheidole-id-first.vcf tmp/INFO.txt tmp/pheidole-id-second.vcf > tmp/pheidole-id-bottom.vcf
+
+grep "#" result/2019-02-06-109samples-maf10percent.recode.vcf > tmp/pheidole-id-top.vcf
+
+cat tmp/pheidole-id-top.vcf tmp/pheidole-id-bottom.vcf > tmp/pheidole-id-whole.vcf
+
+plink --vcf tmp/pheidole-id-whole.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --recode vcf-fid  \
+      --out tmp/pheidole-id-test
+
+# Step 2: for each population, filter out the SNPs without 100% support and  monomorphic
+
+# keep only samples from Bruniquel
+cat S2_pheidole_pop_paper.csv | grep -E "Bruniquel" | cut -d "," -f 1 > bruniquel-colonies.txt
+
+# subset pheno.txt for only Bruniquel
+grep -f bruniquel-colonies.txt pheno.txt > pheno-Bruniquel.txt
+
+# filter VCF
+plink --vcf tmp/pheidole-id-whole.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --keep pheno-Bruniquel.txt \
+      --recode vcf-fid  \
+      --out tmp/pheidole-bruniquel
+
+vcftools --vcf tmp/pheidole-id.vcf \
+         --keep bruniquel-colonies.txt \
+         --maf 0.05 \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/bruniquel-75support-NOmonomorphic
+
+# obtain SNP IDs
+bcftools query -f '%ID\n' tmp/bruniquel-75support-NOmonomorphic.recode.vcf > bruniquel75-snp.txt
+
+wc -l bruniquel75-snp.txt
+# 690665 
+
+# keep only samples from Italy
+cat S2_pheidole_pop_paper.csv | grep -E "Italy" | cut -d "," -f 1 > Italy-colonies.txt
+
+# filter VCF
+vcftools --vcf tmp/pheidole-id.vcf \
+         --keep Italy-colonies.txt \
+         --maf 0.05 \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/Italy-75support-NOmonomorphic
+
+# obtain SNP IDs
+bcftools query -f '%ID\n' tmp/Italy-75support-NOmonomorphic.recode.vcf > Italy75-snp.txt
+
+wc -l Italy75-snp.txt
+# 249151
+
+# keep only samples from Pyrenees
+cat S2_pheidole_pop_paper.csv | grep -E "Pyrenees" | cut -d "," -f 1 > Pyrenees-colonies.txt
+
+# filter VCF
+vcftools --vcf tmp/pheidole-id.vcf \
+         --keep Pyrenees-colonies.txt \
+         --maf 0.05 \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/Pyrenees-75support-NOmonomorphic
+
+# obtain SNP IDs
+bcftools query -f '%ID\n' tmp/Pyrenees-75support-NOmonomorphic.recode.vcf > Pyrenees75-snp.txt
+
+wc -l Pyrenees75-snp.txt
+# 495427 Pyrenees-snp.txt
+
+
+
+# Step 3: keep loci that are found in all populations
+sort bruniquel75-snp.txt Italy75-snp.txt Pyrenees75-snp.txt | uniq -c | sort -n -k1 | awk '$1 == '3' {print $2}' > snp75-list.txt
+
+wc -l snp75-list.txt
+# 121786 snp75-list.txt
+
+# keep only SNPs that are in all populations
+vcftools --vcf tmp/pheidole-id.vcf \
+         --snps snp75-list.txt \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/2020-05-04-108samples-maf005-NOmonomorphic-75support
+# kept 121786 out of a possible 812760 Sites
+
+# Step 4: run a Fisher test of association for social type
+# standard case/control association analysis using Fisher's exact test to generate significance
+plink --vcf tmp/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --assoc fisher \
+      --out result/2020-05-04-108samples-maf005-NOmonomorphic-75support
+
+# copy vcf to archive and soft link to result
+cd tmp
+
+rsync -avx --human-readable --progress 2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf ~/2018-05-illumina-pallidula-results/2018-11-09-association_analysis_mixed_assembly/2019-02-06-109samples-maf10percent/.
+
+
+cd ../result
+
+ln -s ~/2018-05-illumina-pallidula-results/2018-11-09-association_analysis_mixed_assembly/2019-02-06-109samples-maf10percent/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf
+
+
+## Need to analyse number of sig snps in R
+../2020-05-04-filtering.Rmd
+
+
+## PCA analysis on 121,000 SNPs
+
+# step 1 create a genome file - IBD will be calculated
+plink --vcf result/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --genome \
+      --out tmp/2020-06-15-NOmonomorphic-75support
+
+# step 2 use --pca to generate an eigenvec file containing PCs
+# header adds a header line to the .eigenvec file(s)
+# --cluster uses IBS values calculated to perform complete linkage clustering
+# .cluster2 describes only the final cluster configuration
+plink --vcf result/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --cluster \
+      --pca header \
+      --read-genome tmp/2020-06-15-NOmonomorphic-75support.genome \
+      --out result/2020-06-15-NOmonomorphic-75support
+
+
+# to be analysed in R
+
+
+###############################################################################
+# aim: find the top blast hit for the top 10 significant SNPs
+
+todayanalysis="2020-06-17-top-ten-sig"
+
+module load bedtools
+
+# obtain names of top 10 significant SNPs
+cp ../top-ten-snps .
+
+# make a BED file with each contig name
+# 500 nucleotides to the right and left of the SNP
+# why this length? 
+# targeting gene promoter ~ 100-1kb bp upstream of trasncription start site
+vim 2020-06-17-top-ten-sig.BED
+# CHROM Start End
+Ppal_E.contig_1136 149827 150827                                      
+Ppal_E.contig_299 10975 11975
+Ppal_E.contig_500 6687805 688805
+Ppal_E.contig_144 1312842 1313842
+Ppal_E.contig_1191 43585 44585
+Ppal_E.contig_1448 482787 483787
+Ppal_E.contig_1562 744702 745702
+Ppal_E.contig_1100 250823 251823
+Ppal_E.contig_1734 422761 423761
+Ppal_E.contig_2068 294164 295164
+
+
+# soft link assembly reference to input
+cd input
+ln -s ~/db/genomic/Pheidole_pallidula/2019-03-05-Ppal_E/Ppal_E.fasta .
+cd ..
+
+# bedtools getfasta extracts sequences from the reference FASTA file for each of the intervals defined in a BED file.
+bedtools getfasta -fi input/Ppal_E.fasta \
+                  -bed 2020-06-17-top-ten-sig.BED \
+                  -fo result/${todayanalysis}.fasta
+
+# copy the resulting fasta into blast nucleotide (web blastn Highly similar sequences (megablast); default parameters)
+# only six pallidula sequences have hits, the rest have none.
+
+
+# second test with a blastn (“somewhat similar”)
+# all pallidula sequences have hits
+# most of them have ant hits (ie probably not endosymbiont)
+# some have other taxa (endosymbiont?)
+# some have no hits on the variant locus (pallidula-specific? unknown endosymbiont?)
+
+
+
+
+
+###############################################################################
+# aim: making SNP matrix for the 10 contigs with top 10 significant SNPs
+
+todayanalysis="2020-06-17-top-ten-sig"
+
+module load bcftools
+module load plink
+
+# tmux new -s bcftools; this task takes some times
+bcftools sort input/complete.vcf -T /tmp/ -o tmp/sorted-complete.vcf
+
+# compress by bgzip (two hours)
+bgzip tmp/sorted-complete.vcf
+
+# index the vcf
+tabix -p vcf tmp/sorted-complete.vcf.gz
+
+# give SNP names
+plink --vcf tmp/sorted-complete.vcf.gz \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --set-missing-var-ids @:#\$1,\$2 \
+      --recode vcf-fid \
+      --out tmp/${todayanalysis}-id
+
+# compress by bgzip 1320
+bgzip tmp/${todayanalysis}-id.vcf
+
+# index the vcf
+tabix -p vcf tmp/${todayanalysis}-id.vcf.gz
+
+# copy in the list of contig and position
+#(10 SNPs and their 25 neighbours from each side)
+cp ../region-file .
+
+# with vim add a hash key in front of headers
+# remove the padj column
+cut -f 1,2 region-file > region-file-no-Padj
+
+# subset vcf for just the SNPs needed
+bcftools filter tmp/${todayanalysis}-id.vcf.gz --regions-file region-file-no-Padj > tmp/${todayanalysis}-109samples-maf10percent.recode.vcf
+
+# obtain snp matrix for R script of frequency of common allele
+bcftools query -f '%ID\t%POS[\t%GT]\n' tmp/${todayanalysis}-109samples-maf10percent.recode.vcf > result/${todayanalysis}-snp_matrix.txt
+
+# obtain sample vec
+bcftools query -l tmp/${todayanalysis}-109samples-maf10percent.recode.vcf \
+              > result/${todayanalysis}-sample_names.txt
+
+# checking the filtering
+#bcftools query -f '%CHROM\n' tmp/${todayanalysis}-109samples-maf10percent.recode.vcf
+
+# analysis of frequency of common allele
+# Rscript 2020-06-17-frequency.Rmd
+
+
+###############################################################################
+## FST sliding window analysis ##
+# With the new set of data
+
+# run sliding window for FST analysis using the new dataset
+# 121,786 SNPs, minq>30, 75% sample support, biallelic, 108 samples, maf>0.05, polymorphic within a population
+
+
+todayanalysis="2020-05-06-108samples-polymorphic-75support"
+
+
+# Step 1: copy text files with names of samples that are from M/P colonies
+
+cp ../2019-03-19-coding-only-109samples-maf10percent/monogynous_sample_names.txt .
+
+cp ../2019-03-19-coding-only-109samples-maf10percent/polygynous_sample_names.txt .
+
+# Is it an issue of dash?
+
+sed 's/-P/P/g' tmp/pheidole-id-test.vcf | sed 's/-M/M/g' - | sed 's/-N/N/g' - > tmp/pheidole-id-test-nodash.vcf
+
+sed 's/-M/M/g' monogynous_sample_names.txt | sed 's/-N/N/g' - > tmp/monogynous_sample_names-nodash.txt
+
+sed 's/-P/P/g' polygynous_sample_names.txt | sed 's/-N/N/g' - > tmp/polygynous_sample_names-nodash.txt
+
+
+# Step 2: calculate FST by window
+# window size and step are based on Pracana 2017a
+
+vcftools --vcf result/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf \
+         --weir-fst-pop monogynous_sample_names.txt \
+         --weir-fst-pop polygynous_sample_names.txt \
+         --fst-window-size 30 \
+         --fst-window-step 10 \
+         --out tmp/${todayanalysis}-Mpop_vs_Ppop
+
+
+Still not working :/ 
+I will use R popgenome to do so
+
+
+# compress by bgzip
+bgzip -c result/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf > tmp/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf.gz
+
+# index the vcf
+tabix -p vcf tmp/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf.gz
+
+# make a list of contigs found in the vcf
+grep -v "#" result/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf | cut -f 1 | uniq > tmp/contigs-in-vcf
+
+# make a list of contigs found in the vcf and their length
+grep -f tmp/contigs-in-vcf Ppal_E-contig-length-clean > tmp/vcf-contig-name-length
+
+# save names of contigs in vcf larger than 30000bp
+sort -n -k 2 -r Ppal_E-contig-length-clean | awk '$2 > 30000  {print ;}' | cut -f 1 | grep -f tmp/contigs-in-vcf > tmp/vcf-contig-length-30kb
+
+# save names of contigs in vcf smaller than 30000bp
+sort -n -k 2 -r Ppal_E-contig-length-clean | awk '$2 < 30000  {print ;}' | cut -f 1 | grep -f tmp/contigs-in-vcf > tmp/vcf-contig-length-less30kb
+
+
+# create temporary files
+touch tmp/vcf-contig_endpos
+
+touch tmp/vcf-contig_begpos
+
+grep -v "#" result/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf > tmp/no-header.vcf
+
+while read -r CONTIG; do
+	# find beginning and end position of each contig
+	grep $CONTIG tmp/no-header.vcf | cut -f 2  | tail -n1 >> tmp/vcf-contig_endpos
+
+	grep $CONTIG tmp/no-header.vcf | cut -f 2  | head -n1 >> tmp/vcf-contig_begpos
+
+
+done<tmp/contigs-in-vcf
+
+
+# concatenate info needed by R script
+paste tmp/vcf-contig-name-length tmp/vcf-contig_begpos tmp/vcf-contig_endpos > vcf-contig-length-beg-end
+
+# R script needs vcf-contig-length-beg-end
+

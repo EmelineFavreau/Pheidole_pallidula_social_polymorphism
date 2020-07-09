@@ -1,0 +1,140 @@
+---
+title: "2019-03-19-filtering-tblastn"
+author: "Emeline Favreau"
+date: "19/03/2019"
+output: pdf_document
+---
+
+I blasted _Solenopsis_ gene predictions against _Pheidole_ MinION assembly to retrieve _Pheidole_ genic regions.
+This will help removing some of the current noise in the dataset.
+There are 1,234,737 from the blast search.
+
+contigs that do not have any hit from Solenopsis protein blast are removed from the analysis.
+
+###############################################################################
+
+```{r eval = TRUE, echo = FALSE, include = TRUE}
+
+library("ggplot2")
+# input the names of the contigs in the reference
+pheidole_contigs <- read.table(file = "assembly-stats.txt",
+                               header = FALSE)
+# keep only name and length
+pheidole_contigs <- pheidole_contigs[, 1:2]
+# give names to columns
+colnames(pheidole_contigs) <- c("contig_names", "length")
+
+#head(pheidole_contigs)
+# how many contigs to start with: 4130
+#print(paste("There are", 
+#            length(unique(as.character(pheidole_contigs$contig_names))),
+#            "Pheidole contigs in the assembly. Lengths vary as below:"))
+#summary(as.numeric(pheidole_contigs$length))
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#    142    1984   10060   69880   43730 2869000 
+
+# average length of contigs: 69880 
+all_contig_length_average <- summary(as.numeric(pheidole_contigs$length))[4]
+#print(paste("The average length of contigs is", all_contig_length_average, "bp"))
+
+# input the blast input
+raw_blast_output <- read.table(file = "tmp/Phei-genic-output-blast.txt",
+                               header = FALSE)
+# add names for columns
+colnames(raw_blast_output) <- c("qseqid", "sseqid", "pident", "length",
+                                "qstart", "qend", "sstart", "send",
+                                "evalue", "bitscore", "qlen", "qcovs")
+# transform in character
+raw_blast_output$sseqid <- as.character(raw_blast_output$sseqid)
+# head(raw_blast_output)
+
+
+# how many contigs to start with: 3003
+#print(paste("There are", 
+#            length(unique(as.character(raw_blast_output$sseqid))), 
+#           "Pheidole contigs in the blast output"))
+
+# get contigs that did not make it into the blast output
+raw_blast_output$sseqid <- as.character(raw_blast_output$sseqid)
+
+# subset the dataframe with length for only 
+not_in_blast_output <- pheidole_contigs[!pheidole_contigs$contig_names 
+                                              %in% raw_blast_output$sseqid, ]
+# transform in numeric
+not_in_blast_output$length <- as.numeric(not_in_blast_output$length)
+
+# how many contigs without protein-coding genes
+#print(paste("There are", 
+#            length(unique(as.character(not_in_blast_output$contig_names))), 
+#            "Pheidole contigs without a genic region"))
+
+# how is the distribution of the query length?
+summary(raw_blast_output$qlen)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#   34.0   296.0   497.0   757.4   804.0 15610.0 
+
+hist(raw_blast_output$qlen)
+# how many hits? 1,234,737
+nrow(raw_blast_output)
+nrow(raw_blast_output[raw_blast_output$qlen > 300, ]) # 917,110
+# https://www.ncbi.nlm.nih.gov/genome/annotation_euk/Harpegnathos_saltator/101/
+# H.saltator has 11,838 genes, the smallest having 71 bp 
+# I guestimated that 300 bp be the right cut off to remove some small fragments
+larger_fragments <- raw_blast_output[raw_blast_output$qlen > 300, ]
+# save to result as a bed file: http://genome.ucsc.edu/FAQ/FAQformat.html#format1
+outbed <- larger_fragments[, c(2, 7, 8)]
+# change identifiers in bed file
+outbed$sseqid <- gsub(pattern = "Ppal_E.", x = outbed$sseqid, replacement = "")
+outbed$sseqid <- paste(outbed$sseqid, "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", sep = "")
+ 
+write.table(x = outbed, file = "result/out.bed", quote = FALSE, row.names = FALSE, col.names = FALSE, sep = "\t")
+
+# plot the length distribution of the contigs with no hit from blast
+ggplot(data = not_in_blast_output, aes(not_in_blast_output$length)) +
+  geom_histogram(binwidth = 1000) +
+  geom_vline(data = not_in_blast_output, 
+             aes(xintercept = all_contig_length_average), colour = "blue") +
+  ggtitle("contigs with no predicted genic regions are smaller
+          than the average length in the assembly") +
+  xlab("contig length") +
+  theme_classic()
+
+# save the names of contigs to exclude from analysis
+non_genic_contig_names <- not_in_blast_output$contig_names
+write.table(x = non_genic_contig_names, 
+            file = "result/non_genic_contig_names", 
+            quote = FALSE, 
+            row.names = FALSE, 
+            col.names = FALSE)
+
+# save the dataset for only the coding regions
+coding_region_df <- pheidole_contigs[!as.character(pheidole_contigs$contig_names) %in% as.character(not_in_blast_output$contig_names), ]
+
+# summary of the assembly before/after removing non-coding contigs
+before_num_contig            <- length(unique(as.character(pheidole_contigs$contig_names)))
+before_contig_average_length <- all_contig_length_average
+before_assembly_total_length <- sum(as.numeric(pheidole_contigs$length))
+after_num_contig             <- nrow(coding_region_df)
+after_contig_average_length  <- summary(coding_region_df$length)[4]
+after_assembly_total_length  <- sum(as.numeric(coding_region_df$length))
+
+summary_table <- cbind(c(before_num_contig, before_contig_average_length, before_assembly_total_length),
+      c(after_num_contig, after_contig_average_length, after_assembly_total_length))
+
+summary_table <- as.data.frame(summary_table)
+colnames(summary_table) <- c("all", "coding_only")
+rownames(summary_table) <- c("number_of_contigs", "contig_average_length", "assembly_length")
+
+print(summary_table)
+
+# looking at coverage of query (aim for 100%)
+# summary(raw_blast_output$qcovs)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#   0.00   38.00   70.00   64.56   94.00  100.00 
+
+  
+```
+
+# Conclusion: 
+- I removed 1,127 contigs from the current assembly
+- The coding assembly is 285Mb, has 3,003 contigs, of average lentgh 94,940 bp

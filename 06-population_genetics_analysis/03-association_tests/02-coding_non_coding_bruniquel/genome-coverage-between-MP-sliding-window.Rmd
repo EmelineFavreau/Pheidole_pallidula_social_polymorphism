@@ -1,0 +1,465 @@
+---
+title: "Sliding window read coverage"
+author: "Emeline Favreau"
+date: "25 June 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+Using Bruniquel data for coding and non-coding regions, we ask whether each locus maps differently depending on the social type of the sample.
+Here we compare the coverage of each base of the reference by social type.
+There are 15 monogynous samples and 53 polygynous samples.
+
+For 10 contigs with a skewed coverage (toward polygynous or towards monogynous) and 6 contigs with no skewed coverage, I calculated the mean coverage of 5kb windows for each sample. Briefly, for each sample, I subsetted the alignment file for just this contig (samtools view), I obtained the coverage for each window (bedtools coverageBed), I calculated the mean for each window (normalised by the median in this window, in R). I then concatenated each resulting table (for each sample, the table contains as many mean read coverage as 5kb window) and imported them here.
+
+```{r import all the data , eval = TRUE, echo = FALSE, include = FALSE}
+
+# import mean read depth by 5kb regions of 16 contigs
+# equal amount of reads between social forms
+contig_1158_5kb_coverage <- read.table(file = "result/contig_1158/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_1193_5kb_coverage <- read.table(file = "result/contig_1193/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_1223_5kb_coverage <- read.table(file = "result/contig_1223/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_1470_5kb_coverage <- read.table(file = "result/contig_1470/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_2111_5kb_coverage <- read.table(file = "result/contig_2111/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_1654_5kb_coverage <- read.table(file = "result/contig_1654/all-samples-read-count5kb", header = TRUE, sep = "\t")
+
+# more M reads
+contig_1346_5kb_coverage <- read.table(file = "result/contig_1346/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_237_5kb_coverage  <- read.table(file = "result/contig_237/all-samples-read-count5kb",  header = TRUE, sep = "\t")
+contig_2241_5kb_coverage <- read.table(file = "result/contig_2241/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_3784_5kb_coverage <- read.table(file = "result/contig_3784/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_1697_5kb_coverage <- read.table(file = "result/contig_1697/all-samples-read-count5kb", header = TRUE, sep = "\t")
+
+# more P reads
+contig_4645_5kb_coverage <- read.table(file = "result/contig_4645/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_1752_5kb_coverage <- read.table(file = "result/contig_1752/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_43_5kb_coverage   <- read.table(file = "result/contig_43/all-samples-read-count5kb",   header = TRUE, sep = "\t")
+contig_4728_5kb_coverage <- read.table(file = "result/contig_4728/all-samples-read-count5kb", header = TRUE, sep = "\t")
+contig_1768_5kb_coverage <- read.table(file = "result/contig_1768/all-samples-read-count5kb", header = TRUE, sep = "\t")
+
+# import population info
+pop_info_df <- read.csv(file = "S2_pheidole_pop_paper.csv")
+
+# load all the libraries
+# get libraries
+basic_libraries <- c("qqman", "ggplot2", "gridExtra", "ggrepel", "RColorBrewer", "tidyr", "reshape2")
+for (lib in basic_libraries) {
+        if (require(package = lib, character.only = TRUE)) {
+                print("Successful")
+        } else {
+                print("Installing")
+                install.packages(lib)
+                library(lib, character.only = TRUE )
+        }
+}
+```
+
+
+
+
+```{r read depth 5kb window, eval = TRUE, echo = FALSE, warning = FALSE}
+
+# vector of contigs with log2 fold change around 0 (aka normal)
+normal_contig_vec <- c("contig_1158", "contig_1193", "contig_1223", "contig_1470", "contig_2111", "contig_1654")
+
+# vector of contigs with more M reads than P reads (south of graph)
+M_contig_vec <- c("contig_1346", "contig_237", "contig_2241", "contig_3784", "contig_1697")
+
+# vector of contigs with more P reads than M reads (north of graph)
+P_contig_vec <- c("contig_4645", "contig_1752", "contig_43", "contig_4728", "contig_1768")
+
+# concatenate all contigs into one vector
+contig_vec <- c(normal_contig_vec, M_contig_vec, P_contig_vec)
+
+# make a dataset list
+dataset_list <- list(not_enriched1 = contig_1158_5kb_coverage,
+                    not_enriched2 = contig_1193_5kb_coverage,
+                    not_enriched3 = contig_1223_5kb_coverage,
+                    not_enriched4 = contig_1470_5kb_coverage,
+                    not_enriched5 = contig_2111_5kb_coverage,
+                    not_enriched6 = contig_1654_5kb_coverage,
+                    M_enriched1 = contig_1346_5kb_coverage,
+                    M_enriched2 = contig_237_5kb_coverage,
+                    M_enriched3 = contig_2241_5kb_coverage,
+                    M_enriched4 = contig_3784_5kb_coverage,
+                    M_enriched5 = contig_1697_5kb_coverage,
+                    P_enriched1 = contig_4645_5kb_coverage,
+                    P_enriched2 = contig_1752_5kb_coverage,
+                    P_enriched3 = contig_43_5kb_coverage,
+                    P_enriched4 = contig_4728_5kb_coverage,
+                    P_enriched5 = contig_1768_5kb_coverage)
+
+# make a list of plot names
+my_plot <- list()
+
+# make a list for Wilcoxon values
+wilcoxon_values <- list()
+
+
+# loop through contigs
+for(this_contig_rank in 1:length(contig_vec)){
+
+  # find the file
+  this_file <- dataset_list[[this_contig_rank]]
+  
+  # add rownames as window rank (1 is 0-5kb, 2 is 5-10kb, etc)
+  row.names(this_file) <- seq(from = 1, to = nrow(this_file), by = 1)
+  
+  # add column names as samples (A01-P, etc)
+  colnames(this_file) <- gsub(x = colnames(this_file), pattern = "\\.", replacement = "-")
+  
+  # vector of samples
+  sample_vec <- colnames(this_file)
+  
+  # add duplicates for testing clustering
+  # this_file_with_duplicates <- cbind(this_file,
+  #                                    subset(this_file, select = colnames(this_file) == "A01-P"),
+  #                                    subset(this_file, select = colnames(this_file) == "A01-P"),
+  #                                    subset(this_file, select = colnames(this_file) == "E73-M"),
+  #                                    subset(this_file, select = colnames(this_file) == "E73-M"))
+  
+  # # update colnames, samples and this_file
+  # colnames(this_file_with_duplicates) <- c(sample_vec, "A01-P_dup1", "A01-P_dup2","E73-M_dup1","E73-M_dup2")
+  # sample_vec <- colnames(this_file_with_duplicates)
+  # this_file <- this_file_with_duplicates 
+  
+  # calculate number of window in this contig
+  num_of_windows <- nrow(this_file)
+  
+  # obtain mean per sample in this contig
+  this_file_mean_per_sample <- apply(this_file, 2, mean)
+
+  # make a result table with normalised read depth
+  this_file_normalised <- this_file
+
+  # normalise each read depth by mean (per sample)
+  for(my_position in 1:ncol(this_file)){
+    # subset for this sample
+    this_file_this_sample <- subset(this_file, select = colnames(this_file) == sample_vec[my_position])
+    # normalise by mean
+    this_file_this_sample_normalised <- this_file_this_sample / this_file_mean_per_sample[names(this_file_mean_per_sample) == sample_vec[my_position]]
+    # save result
+    this_file_normalised[names(this_file_normalised) == sample_vec[my_position]] <- this_file_this_sample_normalised
+ }
+  
+  # transform the wide df into long df
+  # make a window column (as a factor)
+  this_file_normalised$window <- factor(row.names(this_file_normalised))
+  
+  # Specify id.vars: the variables to keep but not split apart on
+  this_file_normalised_long <- melt(this_file_normalised, id.vars = c("window"))
+  
+  # rename columns
+  colnames(this_file_normalised_long) <- c("window", "sample", "read_depth")
+  
+  # add column for population
+  this_file_normalised_long$population <- pop_info_df$population[match(this_file_normalised_long$sample, pop_info_df$sample.soc)]
+  
+  # add a column for social form (M or P)
+  this_file_normalised_long$social <- gsub(x = this_file_normalised_long$sample, pattern = ".*\\-", replacement = "")
+  
+  # filter for only Bruniquel (as the log2 fold change plot for for only Bruniquel)
+  this_file_normalised_long_Bruniquel <- subset(this_file_normalised_long, subset = population == "Bruniquel")
+  
+  # for the testing, add the duplicates
+  # this_file_normalised_long_Bruniquel_dup <- rbind(this_file_normalised_long_Bruniquel,
+  #       subset(this_file_normalised_long, subset = sample %in% c("A01-P_dup1", "A01-P_dup2","E73-M_dup1","E73-M_dup2")))
+  
+  # this_file_normalised_long_Bruniquel <- this_file_normalised_long_Bruniquel_dup
+  
+  # keep samples from each social type in a vector       
+  mono_samples <- grep(pattern = "\\-M", x = this_file_normalised_long_Bruniquel$sample, value = TRUE)
+  poly_samples <- grep(pattern = "\\-P", x = this_file_normalised_long_Bruniquel$sample, value = TRUE)
+  
+  # test for departure from same distribution (Wilcoxon test on read coverage between M and P on this particular window)
+  # vector to keep Wilcoxon values in
+  this_contig_wilcoxon_values <- c()
+  # loop through each window
+  for(window_position in 1:num_of_windows){
+    # save p-value of test
+    wilcoxon_p_value <- wilcox.test(x = unlist(subset(this_file_normalised_long_Bruniquel, subset = social == "M" & as.character(window) == window_position, select = read_depth)),
+                                    y = unlist(subset(this_file_normalised_long_Bruniquel, subset = social == "P" & as.character(window) == window_position, select = read_depth)))$p.value
+    # name the vector
+    names(wilcoxon_p_value) <- window_position
+    # add it to the vector for this contig
+    this_contig_wilcoxon_values <-  c(this_contig_wilcoxon_values, wilcoxon_p_value)
+  }
+  
+  # add vector of p-values to list of results
+  wilcoxon_values[[this_contig_rank]] <- this_contig_wilcoxon_values
+  
+  # find names of windows that have a significant p-value
+  this_contig_wilcoxon_values_sig <- names(this_contig_wilcoxon_values[this_contig_wilcoxon_values < 0.05])
+  
+  # update the vector for a meaningful plot description
+  if(length(this_contig_wilcoxon_values_sig) == 0){
+    this_contig_wilcoxon_values_sig <- "No significant window (Wilcoxon test)"
+  } else {
+    this_contig_wilcoxon_values_sig <- paste("Wilcoxon test's significant window is number", this_contig_wilcoxon_values_sig)
+  }
+  
+   # make a matrix for Bruniquel (row = window, column = samples)
+   this_file_normalised_mat <- subset(this_file_normalised, select = colnames(this_file_normalised) %in% this_file_normalised_long_Bruniquel$sample)
+   
+   # separate matrix by gyny
+   this_file_mat_Bruniquel_M <- subset(this_file_normalised_mat, select = colnames(this_file_normalised_mat) %in% mono_samples)
+   this_file_mat_Bruniquel_P <- subset(this_file_normalised_mat, select = colnames(this_file_normalised_mat) %in% poly_samples)
+  
+   # calculate distances for each matrix (t because we focus on original columns)
+   M_dist_mat <- dist(t(this_file_mat_Bruniquel_M), method = "euclidean")
+   P_dist_mat <- dist(t(this_file_mat_Bruniquel_P), method = "euclidean")
+  
+   # cluster those distances for each matrix
+   M_dendo <- hclust(M_dist_mat, method = "ward.D")
+   P_dendo <- hclust(P_dist_mat, method = "ward.D")
+  
+   # obtain global column order from distance clustering study
+   column_order <- c(M_dendo$labels[M_dendo$order], P_dendo$labels[P_dendo$order])
+   
+   # repeat each sample the number of window
+   column_order_to_fit_df <- rep(column_order, each = num_of_windows)
+   
+   # re-order by column
+   this_file_normalised_long_Bruniquel_reordered <- this_file_normalised_long_Bruniquel[order(match(as.character(this_file_normalised_long_Bruniquel$sample), column_order_to_fit_df)), ]
+   
+   # transform samples into factor for ggplot's sake (y axis)
+   this_file_normalised_long_Bruniquel_reordered$sample <- factor(this_file_normalised_long_Bruniquel_reordered$sample, levels = this_file_normalised_long_Bruniquel_reordered$sample)
+  
+   # order x axis (the windows) by neighbouring sites
+   this_file_normalised_long_Bruniquel_reordered$window <- factor(this_file_normalised_long_Bruniquel_reordered$window, levels = this_file_normalised_long_Bruniquel_reordered$window)
+
+   # make a heatmap for each contig 
+   plot_title  <- paste(names(dataset_list)[this_contig_rank], contig_vec[this_contig_rank], ":", this_contig_wilcoxon_values_sig, sep = " ")
+   xaxis_label <- "5kb windows"
+   yaxis_label <- "Individual"
+   my_plot[[this_contig_rank]] <- ggplot(this_file_normalised_long_Bruniquel_reordered, aes(window, sample)) +
+                                      geom_tile(aes(fill = read_depth)) +
+                                      labs(title = plot_title, x = xaxis_label, y = yaxis_label) +
+                                      theme_classic() +
+                                      theme(axis.text.y = element_text(size = 5)) +
+                                      scale_fill_gradient(low = "white", high = "black") +
+                                      # scale_fill_gradientn(colours = rainbow(50))
+                                      # scale_fill_brewer(palette = "Dark2")
+                                      # horizontal line separating M and P samples
+                                      # annotate("segment", x = 0, xend = num_of_windows+1, y = "E90-M", yend = "E90-M", colour = "blue") + 
+                                      geom_point(aes(size = ifelse(read_depth == 0, "dot", "no_dot"))) +
+                                      scale_size_manual(values = c(dot = 1, no_dot = NA), guide = "none")
+}  
+
+
+my_plot
+
+# correction for multiple comparison
+wilcoxon_values_adj <- p.adjust(p = unlist(wilcoxon_values), method = "BH")
+# no adjusted p-value is significant
+wilcoxon_values_adj_sig <- wilcoxon_values_adj[wilcoxon_values_adj < 0.05]
+
+
+
+```
+contig	type	sig window	notes
+2241	M enriched	1	visually not different between M and P
+3784	M enriched	0	visually not different between M and P
+237	M enriched	1	visually, 40% M and 30% P are similar
+1697	M enriched	1	visually, 40% M and 30% P are similar
+1346	M enriched	1	visually, 50% M and 30% P are similar
+1158	not enriched	1	visually not different between M and P
+1193	not enriched	0	visually not different between M and P
+1223	not enriched	0	visually not different between M and P
+1470	not enriched	1	visually not different between M and P
+2111	not enriched	0	visually not different between M and P
+1654	not enriched	1	visually not different between M and P
+4645	P enriched	0	visually not different between M and P
+1752	P enriched	0	visually not different between M and P
+43	P enriched	1	visually not different between M and P
+4728	P enriched	1	visually not different between M and P
+1768	P enriched	0	visually not different between M and P
+
+I expected to visualise some windows with striking differences between social forms for contigs with a low/high log2 fold change of polygynous read depths with regard to monogynous read depths.
+I expected no variation between social form for those contigs with a log2 fold change around 0 (equivalent of genome-wide average).
+
+Out of 5 contigs with extreme low coverage in polygynous, 4 contigs have one window that is significantly different between M and P (Wilcoxon test).
+Out of 5 contigs with extreme low coverage in monogynous, 2 contigs have one window that is significantly different between M and P (Wilcoxon test).
+Out of 6 contigs with no extreme coverage, 3 contigs have one window that is significantly different between M and P (Wilcoxon test).
+
+Visually, none of the contigs have a difference between monogynous and polygynous, except for contigs 237, 1697, 1346.
+
+We know from before that mapability is not different between the two social type, so we are not missing a chromosome or something.
+
+Now I check if the results are signficant with Wilcoxon test and Kolmogorov-Smirnov tests.
+
+
+```{r wilcoxon and KS 5kb window, eval = TRUE, echo = FALSE, warning = FALSE}
+# run a wilcoxon test per window on those 16 contigs
+# run a KS test per window on those 16 contigs
+
+# make a list of plot names
+#my_plot <- list()
+tests_df <- as.data.frame(matrix(ncol = 5))
+
+# name columns
+colnames(tests_df) <- c("contig_type", "contig", "window", "stat_test", "p_value")
+
+# loop through contigs
+for(this_contig_rank in 1:length(contig_vec)){
+
+  # find the file (read depth per sample and per window)
+  this_file <- dataset_list[[this_contig_rank]]
+  
+  # add rownames as window rank (1 is 0-5kb, 2 is 5-10kb, etc)
+  row.names(this_file) <- seq(from = 1, to = nrow(this_file), by = 1)
+  
+  # add column names as samples (A01-P, etc)
+  colnames(this_file) <- gsub(x = colnames(this_file), pattern = "\\.", replacement = "-")
+  
+  # vector of samples
+  sample_vec <- colnames(this_file)
+  
+  # calculate number of window in this contig
+  num_of_windows <- nrow(this_file)
+  
+  # obtain mean per sample in this contig
+  this_file_mean_per_sample <- apply(this_file, 2, mean)
+
+  # make a result table with normalised read depth
+  this_file_normalised <- this_file
+
+  # normalise each read depth by mean (per sample)
+  for(my_position in 1:length(sample_vec)){
+    # subset for this sample
+    this_file_this_sample <- subset(this_file, select = colnames(this_file) == sample_vec[my_position])
+    # normalise by mean
+    this_file_this_sample_normalised <- this_file_this_sample / this_file_mean_per_sample[names(this_file_mean_per_sample) == sample_vec[my_position]]
+    # save result
+    this_file_normalised[names(this_file_normalised) == sample_vec[my_position]] <- this_file_this_sample_normalised
+   }
+  
+  # keep samples from each social type in a vector       
+  mono_samples <- grep(pattern = "\\-M", x = colnames(this_file_normalised), value = TRUE)
+  poly_samples <- grep(pattern = "\\-P", x = colnames(this_file_normalised), value = TRUE) 
+  
+  # add window name
+  this_file_normalised$window <- 1:num_of_windows
+  
+  # create two vectors for p-values of test
+  all_windows_wilcoxon_pvalue <- c()
+  all_windows_KS_pvalue <- c()
+  
+  # loop through each window
+  for(window_position in 1:num_of_windows){
+      # combine read depth for M samples per window 
+      M_samples_read_depth_vec <- unlist(subset(this_file_normalised, select = colnames(this_file_normalised) %in% mono_samples, subset = window == window_position))
+      P_samples_read_depth_vec <- unlist(subset(this_file_normalised, select = colnames(this_file_normalised) %in% poly_samples, subset = window == window_position))
+      
+      # store p-value from Wilcoxon test
+      all_windows_wilcoxon_pvalue <- c(all_windows_wilcoxon_pvalue, wilcox.test(x = M_samples_read_depth_vec, P_samples_read_depth_vec)$p.value)
+      
+      # store p-value fromKS test 
+      all_windows_KS_pvalue       <- c(all_windows_KS_pvalue, ks.test(x = M_samples_read_depth_vec, P_samples_read_depth_vec)$p.value)
+    
+  }
+  
+  # adujust for multiple comparison
+  all_windows_wilcoxon_pvalue_adj <- p.adjust(p = all_windows_wilcoxon_pvalue, method = "BH")
+  all_windows_KS_pvalue_adj       <- p.adjust(p = all_windows_KS_pvalue, method = "BH")
+
+  
+  # transform the data for plotting (-log10(p))
+  all_windows_wilcoxon_pvalue_adj_minus_log10 <- -log10(all_windows_wilcoxon_pvalue_adj)
+  all_windows_KS_pvalue_minus_adj_log10       <- -log10(all_windows_KS_pvalue_adj)
+  
+  # combine into a df for plotting
+  read_depth_distribution_tests_df <- as.data.frame(cbind(1:num_of_windows,
+                                                          all_windows_wilcoxon_pvalue_adj_minus_log10,
+                                                          all_windows_KS_pvalue_minus_adj_log10))
+  
+  # name columns
+  colnames(read_depth_distribution_tests_df) <- c("window", "wilcoxon", "ks")
+
+  # transform the wide df into long df
+  # make a window column (as a factor)
+  read_depth_distribution_tests_df$window <- factor(read_depth_distribution_tests_df$window)
+
+  # Specify id.vars: the variables to keep but not split apart on
+  read_depth_distribution_tests_df_long <- melt(read_depth_distribution_tests_df, id.vars = c("window"))
+
+  # rename columns
+  colnames(read_depth_distribution_tests_df_long) <- c("window", "stat_test", "p_value")
+  
+  # update window name
+  read_depth_distribution_tests_df_long$window <- paste(read_depth_distribution_tests_df_long$window, contig_vec[this_contig_rank], sep = "")
+  
+  # add column for contig_type
+  contig_type <- gsub(x = names(dataset_list)[this_contig_rank], pattern = "[0-9]+", replacement = "")
+  read_depth_distribution_tests_df_long$contig_type <- rep(contig_type, times = nrow(read_depth_distribution_tests_df_long))
+  
+  # add column for contig
+  read_depth_distribution_tests_df_long$contig <- rep(contig_vec[this_contig_rank], times = nrow(read_depth_distribution_tests_df_long))
+  
+  # store info in dataframe
+  tests_df <- rbind(tests_df, read_depth_distribution_tests_df_long)
+
+}  
+
+# remove NA
+tests_dfnoNA <- tests_df[complete.cases(tests_df), ]
+
+# set factor levels for window in the order of the contigs
+tests_dfnoNA$window <- factor(tests_dfnoNA$window, levels = tests_dfnoNA$window)
+
+# set colours for normal contigs (greys)
+normal_contig_colours_vec    <- c("#f7f7f7", "#d9d9d9", "#bdbdbd", "#969696", "#636363", "#252525")
+# name the vector's values with the name of contigs, so that ggplot controls the exact colour
+names(normal_contig_colours_vec) <- normal_contig_vec
+# set colours for P enriched contigs (purple)
+P_enriched_contig_colour_vec <- c("#f2f0f7", "#cbc9e2", "#9e9ac8", "#756bb1", "#54278f")
+# name the vector's values with the name of contigs, so that ggplot controls the exact colour
+names(P_enriched_contig_colour_vec) <- P_contig_vec
+# set colours for M enriched contigs (orange)
+M_enriched_contig_colour_vec <- c("#feedde", "#fdbe85", "#fd8d3c", "#e6550d", "#a63603")
+# name the vector's values with the name of contigs, so that ggplot controls the exact colour
+names(M_enriched_contig_colour_vec) <- M_contig_vec
+
+# concatenate the 16 colors
+sixteen_colours_vec <- c(normal_contig_colours_vec, M_enriched_contig_colour_vec, P_enriched_contig_colour_vec)
+
+# make a list of plot names
+my_plot <- list()
+
+# set y axis label
+yaxis_label <- "Wilcoxon -log10(p)"
+xaxis_label <- "5kb window"
+
+# plot Wilcoxon
+my_plot[[1]] <- ggplot(subset(tests_dfnoNA, subset = stat_test == "wilcoxon"), aes(x = window, y = p_value, color = contig, shape = contig_type)) +
+      geom_point() +
+      labs(x = xaxis_label, y = yaxis_label) +
+      theme_classic() +
+      theme(axis.text.x = element_blank(), legend.position = "none") +
+      geom_hline(yintercept = -log10(0.05), color = "purple") +
+      scale_color_manual(values = sixteen_colours_vec) +
+      guides(col = guide_legend(ncol = 2))
+  
+
+# set y axis label
+yaxis_label <- "KS -log10(p)"
+
+# plot Wilcoxon
+my_plot[[2]] <- ggplot(subset(tests_dfnoNA, subset = stat_test == "ks"), aes(x = window, y = p_value, color = contig, shape = contig_type)) +
+      geom_point() +
+      labs(x = xaxis_label, y = yaxis_label) +
+      theme_classic() +
+      theme(axis.text.x = element_blank(), legend.position = "none") +
+      geom_hline(yintercept = -log10(0.05), color = "purple") +
+      scale_color_manual(values = sixteen_colours_vec) + 
+      guides(col = guide_legend(ncol = 2))
+
+# print all plots on 3 rows
+do.call(grid.arrange, c(my_plot, 
+                        nrow = 2, 
+                        top = "Comparison of read depth between social type (mean-normalised)",
+                        bottom = "16 Bruniquel contigs fragmented in 5kb regions, p-value adjusted (BH)"
+                        )) 
+
+```

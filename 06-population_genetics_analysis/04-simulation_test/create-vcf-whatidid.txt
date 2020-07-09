@@ -1,0 +1,25 @@
+# aim: add a SNP to the vcf file with the conditions:
+# monogynous are 0/0
+# polygynous are 1/1
+# is the analysis picking this SNP in the Manhattan plot?
+
+# Step 1: create a realistic SNP
+# copy one SNP from VF to new file and change the name of contig
+bcftools view -H input/intersected.vcf | head -1 | sed 's/contig_1_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon/contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon/' > fakeSNP
+
+# remove the top 9 lines (not genotype info)
+sed -r 's/\t/\n/g' fakeSNP | tail -n 108 > fakeSNP-gt_only
+
+# get the sample names
+bcftools query -l input/intersected.vcf > sample_names.txt
+
+# change only the GT of poly for 1/1
+Rscript make-fake-snp.Rmd
+
+# reformat the snp info into VCF
+cut -f 1,2,3,4,5,6,7,8,9 fakeSNP | paste - fakeSNP-gt_only-updated > fakeSNP_updated
+
+# add new SNP and all real SNP to a new VCF file
+cat input/intersected.vcf fakeSNP_updated > tmp/intersected_with-fakeSNP.vcf
+
+# This vcf is ready to be analysed the same way as before - to see if I can pick up the signal or not

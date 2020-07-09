@@ -1,0 +1,213 @@
+#!/bin/sh
+
+###############################################################################
+### Project preparation ###
+module load bcftools/1.8
+module load vcftools/0.1.15
+module load R/3.5.1
+# tabix 0.2.5
+module load plink/1.9-170906
+
+mkdir input
+cd input
+ln -s ../../../input/2019-03-08-109samples-maf10percent/complete.vcf .
+cd ..
+
+mkdir result
+
+mkdir -p ~/monthly_autoScratch/2019-03-05-association_analysis_flye_assembly/2019-03-08-109samples-maf10percent
+
+ln -s ~/monthly_autoScratch/2019-03-05-association_analysis_flye_assembly/2019-03-08-109samples-maf10percent tmp
+
+mkdir -p ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-14-italy-maf10percent
+
+# copy important files
+cp ~/2018-11-09-association_analysis_mixed_assembly/result/2019-02-06-109samples-maf10percent/pheno.txt .
+
+cp ~/2018-11-09-association_analysis_mixed_assembly/result/2019-02-06-109samples-maf10percent/exploring-pca-results.Rmd .
+
+cp ~/2018-11-09-association_analysis_mixed_assembly/result/2019-02-06-109samples-maf10percent/input/S2_pheidole_pop_paper.csv .
+
+cp ~/2018-11-09-association_analysis_mixed_assembly/result/2019-02-06-109samples-maf10percent/assoc-analysis.Rmd .
+
+todayanalysis="2019-03-14-italy"
+
+# update tmp (autoscratch does not exist anymore)
+unlink tmp
+
+mkdir -p ~/scratch/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-italy-maf10percent
+
+ln -s ~/scratch/2019-03-05-association_analysis_flye_assembly/result/2019-03-14-italy-maf10percent tmp
+
+
+
+###############################################################################
+### Filtering vcf ###
+
+# Step 1: index the vcf
+# The input data file must be position sorted
+# tmux new -s bcftools; this task takes sometimes
+bcftools sort input/complete.vcf -T /tmp/ -o tmp/sorted-complete.vcf
+
+# compress by bgzip
+bgzip tmp/sorted-complete.vcf
+
+# index the vcf
+tabix -p vcf tmp/sorted-complete.vcf.gz
+
+## 1 - check the file visually and understand each variant info
+bcftools view -H tmp/sorted-complete.vcf.gz | head -1
+#GT: genotype at this type, 0/0 homozygote reference
+#DP: depth of coverage at sample level, unfiltered
+#AD: unfiltered allele depth
+#RO:Reference allele observation count
+#QR:Sum of quality of the reference observations
+#AO:Alternate allele observation count
+#QA:Sum of quality of the alternate observations
+#GL:Genotype Likelihood, log10-scaled likelihoods of the data given the called
+# genotype for each possible genotype generated from the reference and
+# alternate alleles given the sample ploidy
+
+## 2 - count number of lines without # to have an idea of number of SNPs
+grep -v "^#" input/complete.vcf | wc -l
+# 27006673 MinION
+# 29983468 Illumina
+
+## 3 - check sample list, not in alphabetical order because filtered by position
+bcftools query -l tmp/sorted-complete.vcf.gz
+# check quality High QUAL scores indicate high confidence calls
+bcftools query -f '%QUAL\n' tmp/sorted-complete.vcf.gz | sort | uniq -c \
+         > vcf-qual.txt
+bcftools query -f '%QUAL\n' tmp/sorted-complete.vcf.gz | sort | uniq -c \
+         | sort -k1 > vcf-qual2.txt
+bcftools query -f '%QUAL\n' tmp/sorted-complete.vcf.gz | sort | uniq -c \
+         | sort --key=1 --numeric-sort > vcf-qual3.txt
+
+## 4 - investigate read depth
+vcftools --gzvcf tmp/sorted-complete.vcf.gz \
+          --site-depth \
+          --out tmp/2020-01-20-italy-maf10percent
+
+cat tmp/2020-01-20-italy-maf10percent.ldepth | sort --key=3 \
+          > vcf-depth.txt
+
+vcftools --gzvcf tmp/sorted-complete.vcf.gz \
+          --site-mean-depth \
+          --out tmp/2020-01-20-italy-maf10percent
+
+cat tmp/2020-01-20-italy-maf10percent.ldepth.mean | sort --key=3 \
+          > vcf-depth-mean.txt
+
+cp tmp/*coverage.csv result/.
+
+## 5 - investigate which quality threshold to use
+qual-investigation.R
+
+## 5b - keep only samples from Italy
+cat S2_pheidole_pop_paper.csv | grep -E "Italy" | cut -d "," -f 1 > italy-colonies.txt
+
+todayanalysis="2020-01-20-italy"
+
+## 6 - filtering options
+# only biallelic SNPs, phred quality > 30, 75% sample support
+# Exclude sites on the basis of the proportion of missing data
+# defined to be between 0 and 1, where 0 allows sites that are completely
+# missing and 1 indicates no missing data allowed)
+# filter out 6 samples that are outliers in mds:
+# CU132-P, I17-M, E39-M, E139-P, muna-N, andrea-N [outliers-samples.txt]
+# filter singletons: include only sites with a minor allele frequency of >0.05
+vcftools --gzvcf tmp/sorted-complete.vcf.gz \
+         --remove-indels \
+         --minQ 30 \
+         --max-missing 0.75 \
+         --min-alleles 2 \
+         --max-alleles 2 \
+         --remove outliers-samples.txt \
+         --keep italy-colonies.txt \
+         --maf 0.05 \
+         --recode \
+         --recode-INFO-all \
+         --out tmp/${todayanalysis}-maf10percent
+# 301,507 out of a possible 27006673
+# 1640 seconds
+# 27 minutes
+
+# get sample names
+bcftools query -l tmp/${todayanalysis}-maf10percent.recode.vcf \
+              > tmp/${todayanalysis}-sample_names.txt
+
+# copy to archive
+cd tmp
+
+rsync -avx --human-readable --progress ${todayanalysis}-maf10percent.recode.vcf ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-14-italy-maf10percent/.
+
+rsync -avx --human-readable --progress ${todayanalysis}-sample_names.txt ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-14-italy-maf10percent/.
+
+# softlink to result
+cd ../result
+
+ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-14-italy-maf10percent/${todayanalysis}-maf10percent.recode.vcf
+
+ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-14-italy-maf10percent/${todayanalysis}-sample_names.txt
+
+cd ..
+
+
+###############################################################################
+## make a new VCF with named snps ##
+
+
+# step 1 assign chromosome-and-position-based IDs (currently not named)
+plink --vcf result/${todayanalysis}-maf10percent.recode.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --set-missing-var-ids @:#\$1,\$2 \
+      --make-bed \
+      --out result/${todayanalysis}-pheidole-id
+
+# step 2 make a vcf
+plink --bfile result/${todayanalysis}-pheidole-id \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --pheno pheno.txt \
+      --recode vcf-fid \
+      --out result/${todayanalysis}-pheidole-id
+
+
+
+################################################################################
+####
+# aim: obtaining site-per-site pairwise FST values
+
+todayanalysis="2020-01-20-fst"
+
+module load plink
+
+# case-control should be defined as 0 - 1
+# here pheno has 1 - 2, hopefully this works too
+plink --vcf result/2020-01-20-italy-pheidole-id.vcf \
+      --allow-extra-chr \
+      --allow-no-sex \
+      --fst \
+      --within pheno.txt \
+      --pheno pheno.txt \
+      --out result/${todayanalysis}
+
+
+# this gave the expected amount of SNP! - per locus, the figure is quite busy
+
+# aim: obtaining 5kb window pairwise FST values (coding and non-coding)
+
+module load vcftools
+
+grep -E "P" italy-colonies.txt > polygynous-samples-from-vcf
+grep -E "M" italy-colonies.txt > monogynous-samples-from-vcf
+
+vcftools --vcf result/2020-01-20-italy-pheidole-id.vcf \
+         --weir-fst-pop monogynous-samples-from-vcf \
+         --weir-fst-pop polygynous-samples-from-vcf \
+         --fst-window-size 5000 \
+         --out result/2020-01-22-italy-m-vs-p-5kb
+
+# 2020-01-22-italy-m-vs-p-5kb.windowed.weir.fst to be used in R script

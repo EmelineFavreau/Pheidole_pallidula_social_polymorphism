@@ -1,0 +1,33 @@
+mkdir input
+cd input
+ln -s ~/db/genomic/Pheidole_pallidula/2018-11-30-Ppal_B/Ppal_gnB.fasta reference
+# copy the two top mitochondrial sequences
+vim two-top-mito-seq.fasta
+cd ..
+mkdir result
+
+# make a database_name
+module load blast+
+makeblastdb -in input/reference -out input/referenceBLAST -dbtype nucl -parse_seqids
+
+# blast the two mito sequences Expectation value (E) threshold for saving hits = 0.03
+blastn -query input/two-top-mito-seq.fasta -db input/referenceBLAST -outfmt 6 -out result/phei-mito-blastn-output.txt -evalue 1e-3
+blastn -query input/two-top-mito-seq.fasta -db input/referenceBLAST -outfmt "6 qseqid sseqid pident length evalue bitscore qlen sstart" -out result/phei-mito-blastn-output3.txt -evalue 1e-3
+# http://www.metagenomics.wiki/tools/blast/blastn-output-format-6
+#Column headers:
+# qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore
+
+# in the output, filter for top match (evalue $11, identity)
+echo "qseqid \t sseqid \t pident \t length \t evalue \t bitscore \tqlen " > summary.txt
+cat phei-mito-blastn-output3.txt >> summary.txt
+less -S summary.txt
+
+# four scaffolds should be visually inspected
+Ppal_B.NODE_8886_length_4007_cov_647.981186 # has a top hit for sp, but only 92% identity for pallidula. scaffold coverage kmer is super high
+Ppal_B.NODE_15881_length_1290_cov_0.816853  # has a top hit in pallidula, but only 93% identity in sp. scaff cov 0.81
+Ppal_B.NODE_24374_length_297_cov_0.623529  # has top hit for sp (98%), but only 89% in pallidula
+Ppal_B.NODE_9064_length_3884_cov_5.880490 # has top hit for sp (97%), but only % in pallidula
+Ppal_B.NODE_20678_length_421_cov_1.670068  # only found in pallidula, but only 92% in sp
+
+# on IGV, looking at A01-P and I21-M Ppal_B.NODE_8886_length_4007_cov_647.981186
+I21-M has so much read length compared to A01-P at that particular location

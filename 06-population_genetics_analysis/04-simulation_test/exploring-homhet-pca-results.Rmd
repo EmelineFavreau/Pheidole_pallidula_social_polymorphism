@@ -1,0 +1,107 @@
+---
+title: "PCA plots Pheidole + fake SNP homhet"
+author: "EmelineFavreau"
+date: "2 April 2019"
+output:
+  pdf_document: default
+---
+Using biallelic SNPs (from 108 pheidole, 54,738  variants biallelic SNPs supported by 75% of samples, minor allele frequency >0.05, LD pruned), we explore the population structure with PCA from plink. The assembly contains only contigs with genic regions.
+
+```{r eval = TRUE, echo = FALSE, include = FALSE}
+# check the working directory
+basic_libraries <- c("ggplot2", "readr")
+for (lib in basic_libraries) {
+  if (require(package = lib, character.only = TRUE)) {
+    print("Successful")
+  } else {
+    print("Installing")
+    install.packages(lib)
+    library(lib, character.only = TRUE )
+  }
+}
+```
+
+Looking through all PC axes up to 20, there is no split between monogynous and polygynous.
+
+```{r eval = TRUE, echo = FALSE}
+# import the pca file
+pheidole.eigenvec <- read.table("result/2019-04-02-flye-Pheidole-genic-fakesnp-homhet-PCA.eigenvec", header = TRUE)
+# update social forms
+pheidole.eigenvec$FID <- as.character(pheidole.eigenvec$FID)
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "A56-N"] <- "A56-M"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "I27-N"] <- "I27-P"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "andrea-N"] <- "andrea-P"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "muna-N"] <- "muna-P"
+
+# import population and gyny info
+pop <- read.csv("S2_pheidole_pop_paper.csv", header = TRUE)
+#head(pop)
+pop$sample.soc <- as.character(pop$sample.soc)
+colnames(pop) <- c("FID", "population", "gyny")
+
+# merge the two dataframes
+my_df <- merge(x = pheidole.eigenvec, y = pop, intersect(names(pheidole.eigenvec), names(pop)))
+my_df$population <- as.character(my_df$population)
+# Investigate all 109 samples
+ggplot(my_df, aes(x = PC1, y = PC2, color = population, shape = gyny)) + 
+  geom_point(size = 6, alpha = 0.6) + geom_text(aes(label = FID), hjust = 0, vjust = 0) + theme_classic() + ggtitle("from non-LD variants based on 109 samples \n maf>0.05")
+
+# remove Spain - 2 samples
+my_107_df <- my_df[!(my_df$population == "Spain"), ]
+
+# Investigate 107 samples
+ggplot(my_107_df, aes(x = PC1, y = PC20, color = population, shape = gyny)) + 
+  geom_point(size = 6, alpha = 0.6) + geom_text(aes(label = FID), hjust = 0, vjust = 0) + theme_classic() + ggtitle("from non-LD variants based on 107 samples \n Spain samples are removed")
+
+```
+
+## Investigating by population
+
+
+```{r eval = TRUE, echo = FALSE}
+
+# Investigate Bruniquel samples
+bruniquel_df <- my_df[my_df$population == "Bruniquel", ]
+ggplot(bruniquel_df, aes(x = PC1, y = PC2, color = gyny)) + 
+  geom_point(size = 6, alpha = 0.6) + geom_text(aes(label = FID), hjust = 0, vjust = 0) + theme_classic() + ggtitle("from non-LD variants based on Bruniquel samples \n no clear split per gyny at any level (PC1 -> PC20)")
+
+# Investigate Italy samples
+italy_df <- my_df[my_df$population == "Italy", ]
+
+ggplot(italy_df, aes(x = PC1, y = PC2, color = gyny)) + 
+  geom_point(size = 6, alpha = 0.6) + geom_text(aes(label = FID), hjust = 0, vjust = 0) + theme_classic() + ggtitle("from non-LD variants based on Italy samples \n no clear split per gyny at any level (PC1 -> PC20)")
+
+# Investigate Pyrennes samples
+Pyrennes_df <- my_df[my_df$population == "Pyrenees", ]
+
+ggplot(Pyrennes_df, aes(x = PC1, y = PC2, color = gyny)) + 
+  geom_point(size = 6, alpha = 0.6) + geom_text(aes(label = FID), hjust = 0, vjust = 0) + theme_classic() + ggtitle("from non-LD variants based on Pyrennes samples \n no clear split per gyny at any level (PC1 -> PC20)")
+
+
+```
+
+
+Investigating the proportion of variance explained by each PC axis. 20 axes explain 42% of the whole variance. PC1 to PC5 explain 18% of the whole variation. 
+
+```{r eval = TRUE, echo = FALSE}
+# import the pca file: top eigenvalues are written to plink.eigenval.
+pheidole.eigenval <- read.table("result/2019-04-02-flye-Pheidole-genic-fakesnp-homhet-PCA.eigenval", header = FALSE)
+rownames(pheidole.eigenval) <- unique(rep(paste("PC", 1:20, sep = ""), 20))
+colnames(pheidole.eigenval) <- c("% of variance explained")
+print(pheidole.eigenval)
+sum(pheidole.eigenval$`% of variance explained`[1:5])
+sum(pheidole.eigenval$`% of variance explained`)
+# PC1 to PC5 explain 19% of the whole variation.
+pcs_to_keep <- rownames(pheidole.eigenval)[1:2]
+pheidole.eigenvec.tops <- pheidole.eigenvec[, c(colnames(pheidole.eigenvec)[1:2], pcs_to_keep)]
+write.table(pheidole.eigenvec.tops, file = "result/2019-04-02-flye-Pheidole-genic-fakesnp-homhet-eigenvec.tops.csv", quote = FALSE, row.names = FALSE)
+```
+
+## Conclusion
+
+- PC1 is related to longitude
+- PC2 is related to latitude
+- Both will be covariate to the association test
+- increasing the stringency of the variant filtering led to the increase of proportion of variance explained by PC1 (from 4% to 11%) and PC2 
+- the new assembly (MinION-flye) did not alter significantly the PCA results.
+- removing the non-coding contigs did not alter the PCA results too much (overall variance explained by 42% instead of 40%)

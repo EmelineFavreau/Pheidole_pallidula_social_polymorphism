@@ -1,0 +1,394 @@
+---
+title: "Association analysis Pheidole + fake SNP"
+author: "EmelineFavreau"
+date: "2 April 2019"
+output:
+  pdf_document: default
+---
+
+I tested each SNP for association with social type using logistic regression test implemented in plink, with PC1 and PC2 for covariates (related to longitude and latitude). 54,738 biallelic SNPs, in linkage equilibrium, supported by at least 75% of samples, on coding-only regions (loss of 80% of all SNPs by remooving non-coding contigs). One of the SNPs is fake: monogynous samples are homozygote for alt, polygynous are heterozygote for ref.
+
+
+```{r eval = TRUE, echo = FALSE, include = FALSE}
+# check the working directory
+basic_libraries <- c("qqman", "ggplot2", "adegenet", "genetics", "pegas", "reshape2", "hierfstat")
+for (lib in basic_libraries) {
+        if (require(package = lib, character.only = TRUE)) {
+                print("Successful")
+        } else {
+                print("Installing")
+                install.packages(lib)
+                library(lib, character.only = TRUE )
+        }
+}
+```
+
+
+
+
+
+```{r, eval = TRUE, echo = FALSE}
+# Evaluating raw p-value distribution from regression analysis
+plink_output <- read.csv("result/2019-04-02-flye-Pheidole-genic-fakesnp-LDpruned-maf0.05-snp-pvalues.assoc.logistic.filtered", header = FALSE, sep = "")
+# head(plink_output)
+colnames(plink_output) <- c("CHR", "SNP", "BP", "A1", "TEST", "NMISS", "OR", "STAT", "P") 
+
+# # 0.8% of NAs - no variation at those loci
+# summary(plink_output$P)
+# summary(plink_output$P)[7]/nrow(plink_output) * 100
+
+# remove those loci with NA for a remaining 54,259 SNPs
+clean_snp_in_long_seq <- plink_output[!is.na(plink_output$P), ]
+# nrow(clean_snp_in_long_seq) #54262
+#ggplot(data = clean_snp_in_long_seq, aes(clean_snp_in_long_seq$P)) + geom_histogram(binwidth = 0.03) + ggtitle("Regression analysis raw p-values from 54,259 SNPs") + xlab("unadjusted pvalues")
+
+# http://varianceexplained.org/statistics/interpreting-pvalue-histogram/
+# I struggle with the interpretation of my pvalues
+# the distribution is conservative - is something wrong with my test?
+# the plink output is not automatically adjusted, I checked the manual
+# we expect the results of a high-throughput experiment to resemble 
+# a combination of a uniform distribution (from the null hypotheses) and a
+# distribution with an overabundance of low p-values (from the non-null hypotheses).
+
+# maybe check for quality control
+# to test for departures from uniformity anywhere between 0 and 1, not necessarily only among low p-values.
+# With a binwidth of 0.05, this amounts to checking 20 bins,
+# and therefore using a corrected significance threshold of 0.05/20 = 0.0025, or equivalently, a frequency
+# threshold of F0.9975(m, b). For the data from the study by Fischl et al. [3] in Figure 4, m = 23,332
+# and b = 0.05, so the frequency threshold is 1261.
+# Let b denote the bin width of the histogram
+# b <- 0.03
+# # m denote the number of hypotheses being tested
+# m <-  nrow(clean_snp_in_long_seq)
+# # Quality control threshold :
+# h <- qbinom(p = 1 - b * 0.05, size = m, prob = b)
+# # proportion of SNPs with pvalue of 1 0.003880331
+# # length(clean_snp_in_long_seq$P[clean_snp_in_long_seq$P == 1]) / nrow(clean_snp_in_long_seq) * 100
+# 
+# ggplot(data = clean_snp_in_long_seq, aes(clean_snp_in_long_seq$P)) + geom_histogram(binwidth = 0.03) + geom_abline(aes(), intercept = h) + labs(title = "Regression analysis raw p-values from coding-only data maf>0.05", subtitle = "quality threshold shows that the analysis power is low", x = "unadjusted pvalues") 
+
+```
+
+
+# Regression analysis: Correcting for multiple adjustments
+After testing individually all 54,259 loci, we correct for multiple comparisons and retrieve loci with a p-value of less than 5%. 
+We use a very conservative approach: the correction with false discovery rate by Benjamini and Hochberg method.
+
+```{r, eval = TRUE, echo = FALSE}
+# adjust the p-value using Benjamini and Hochberg method
+pvalue_vec <- clean_snp_in_long_seq$P
+names(pvalue_vec) <- clean_snp_in_long_seq$SNP
+all_adjusted_pvalues <- p.adjust(pvalue_vec, method = "BH", n = length(pvalue_vec))
+clean_snp_in_long_seq$adj_pvalue <- all_adjusted_pvalues
+
+# Are any adjusted pvalues lower than 0.05 ?
+if(sum(clean_snp_in_long_seq$adj_pvalue <= 0.05) == 0){
+  print("None of the adjusted pvalues are lower than 0.05")
+} else {
+  print(paste(sum(clean_snp_in_long_seq$adj_pvalue <= 0.05), "adjusted pvalues are lower than 0.05"))
+}
+# 2488 adjusted pvalues are lower than 0.05
+```
+
+
+# Regression analysis: Manhattan plots
+
+```{r, eval = TRUE, echo = FALSE}
+# import file with scaffold name and number of SNPs
+scaff_stats_df <- read.table(file = "2019-04-02-flye-Pheidole-genic-fakesnp-snp-per-contig.txt", header = FALSE, sep = "")
+# name columns
+colnames(scaff_stats_df) <- c("SNP_num","scaffold_names")
+# order by number of SNPs
+ordered_scaff_stats_df <- scaff_stats_df[order(-scaff_stats_df$SNP_num), ]
+# change into dataframe
+ordered_scaff_stats_df <- as.data.frame(ordered_scaff_stats_df)
+
+# make a small data.frame of scaffold names and ids (num of snp)
+scaffold_df <- as.data.frame(cbind(as.character(ordered_scaff_stats_df$scaffold_names), c(1:nrow(ordered_scaff_stats_df))))
+# name columns
+colnames(scaffold_df) <- c("scaf_names", "scaf_ids")
+
+
+# import file with scaffold name and length
+scaff_length_df <- read.table(file = "intersected.contig.length", header = FALSE, sep = "")
+# name columns
+colnames(scaff_length_df) <- c("scaffold_names", "scaffold_length")
+# change contig names from short to long form
+scaff_length_df$scaffold_names <- gsub(pattern = "Ppal_E.", x = scaff_length_df$scaffold_names, replacement = "")
+scaff_length_df$scaffold_names <- gsub(pattern = "$", x = scaff_length_df$scaffold_names, replacement = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon")
+# add a row for the fake contig and SNP
+scaff_length_df <- rbind(c("contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", "72141"),
+      scaff_length_df)
+scaff_length_df$scaffold_length <- as.numeric(scaff_length_df$scaffold_length)
+# order by number of SNPs
+ordered_scaff_length_df <- scaff_length_df[order(-scaff_length_df$scaffold_length), ]
+# change into dataframe
+ordered_scaff_length_df <- as.data.frame(ordered_scaff_length_df)
+
+
+# make a small data.frame of scaffold names and ids (length)
+scaffold_length_df <- as.data.frame(cbind(as.character(ordered_scaff_length_df$scaffold_names), c(1:nrow(ordered_scaff_length_df))))
+# name columns
+colnames(scaffold_length_df) <- c("scaf_names", "scaf_ids")
+
+# create new columns for ids in the large dataframe
+clean_snp_in_long_seq$scaf_ids <- scaffold_df$scaf_ids[match(clean_snp_in_long_seq$CHR, scaffold_df$scaf_names)]
+
+clean_snp_in_long_seq$scaf_length_ids <- scaffold_length_df$scaf_ids[match(clean_snp_in_long_seq$CHR, scaffold_length_df$scaf_names)]
+
+#head(clean_snp_in_long_seq)
+
+# keep only the important columns
+manhattan_df <- clean_snp_in_long_seq[, c("BP", "SNP", "adj_pvalue", "scaf_ids", "scaf_length_ids", "P")]
+manhattan_df$BP <- as.numeric(manhattan_df$BP)
+manhattan_df$P <- as.numeric(manhattan_df$P)
+manhattan_df$adj_pvalue <- as.numeric(manhattan_df$adj_pvalue)
+manhattan_df$scaf_ids <- as.numeric(as.character(manhattan_df$scaf_ids))
+manhattan_df$scaf_length_ids <- as.numeric(as.character(manhattan_df$scaf_length_ids))
+
+# Plot figure by ordering contigs by total number of SNPs
+#pdf(file = "manhattan_df_unadjusted.pdf")
+#manhattan(manhattan_df, chr = "scaf_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "54,262 SNPs in linkage equilibrium in 3 Pheidole populations", xlab = "Scaffolds ordered by total number of SNPs")
+#dev.off()
+
+# Plot figure by ordering contigs by total length
+#pdf(file = "2019-03-25-manhattan_df_by_length.pdf")
+#manhattan(manhattan_df, chr = "scaf_length_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "54,262 SNPs in linkage equilibrium in 3 Pheidole populations", xlab = "Scaffolds ordered by length")
+#dev.off()
+
+# Plot manhattan plot for only the 10 longuest contigs
+manhattan_df_ten_longuest_contigs <- subset(manhattan_df, manhattan_df$scaf_length_ids %in% 1:10)
+# manhattan(manhattan_df_ten_longuest_contigs, chr = "scaf_length_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "Regression analysis: \n SNPs in linkage equilibrium in all populations for 10 longest scaffolds", xlab = "Scaffolds ordered by length")
+# 
+# # Plot manhattan plot for only the 20 longuest contigs
+# manhattan_df_twenty_longuest_contigs <- subset(manhattan_df, manhattan_df$scaf_length_ids %in% 1:20)
+# manhattan(manhattan_df_twenty_longuest_contigs, chr = "scaf_length_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "Regression analysis: \n SNPs in linkage equilibrium in all populations for 20 longest scaffolds", xlab = "Scaffolds ordered by length")
+# 
+# # Plot manhattan plot for only the 10 contigs with the most SNPs
+# manhattan_df_ten_SNPrich_contigs <- subset(manhattan_df, manhattan_df$scaf_ids %in% 1:10)
+# manhattan(manhattan_df_ten_SNPrich_contigs, chr = "scaf_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "Regression analysis: \n SNPs in LE in all populations for the 10 contigs with the most SNPs", xlab = "Scaffolds ordered by total SNP counts")
+# 
+# # Plot manhattan plot for only the 20 contigs with the most SNPs
+# manhattan_df_twenty_SNPrich_contigs <- subset(manhattan_df, manhattan_df$scaf_ids %in% 1:20)
+# manhattan(manhattan_df_twenty_SNPrich_contigs, chr = "scaf_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "Regression analysis: \n SNPs in LE in all populations for the 20 contigs with the most SNPs", xlab = "Scaffolds ordered by total SNP counts")
+
+# Plot manhattan plot for only the 10 longuest contigs + fake SNP
+manhattan_df_ten_ANDfake_longuest_contigs <- rbind(manhattan_df_ten_longuest_contigs,
+                                                   subset(manhattan_df, manhattan_df$scaf_length_ids %in% "531"))
+
+manhattan(manhattan_df_ten_ANDfake_longuest_contigs,
+          chr = "scaf_length_ids",
+          bp = "BP",
+          p = "P",
+          snp = "SNP", 
+          suggestiveline = -log10(0.05), 
+          highlight = "contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
+          main = "Regression analysis: \n SNPs in linkage equilibrium in all populations \n for 10 longest scaffolds and fake green SNP", xlab = "Scaffolds ordered by length")
+
+
+```
+
+The green fake SNP does not have a low p-value and would not be detected by my regression analysis.
+
+Another way is to test the presence of the fake SNP with a simpler method: allele counting Fisher test.
+
+
+
+
+
+
+
+
+```{r, eval = TRUE, echo = FALSE}
+# Evaluating raw p-value distribution from Fisher
+plink_output <- read.csv("result/2019-04-02-flye-Pheidole-genic-fakesnp.assoc.fisher", header = TRUE, sep = "")
+# head(plink_output)
+
+
+# variation at all loci
+#summary(plink_output$P)
+
+
+# remove those loci with NA for a remaining 54,259 SNPs
+clean_snp_in_long_seq <- plink_output
+#nrow(clean_snp_in_long_seq) #54738
+# ggplot(data = clean_snp_in_long_seq, aes(clean_snp_in_long_seq$P)) + 
+#   geom_histogram(binwidth = 0.03) +
+#   ggtitle("Fisher raw p-values from 54,259 SNPs") +
+#   xlab("unadjusted pvalues")
+
+# http://varianceexplained.org/statistics/interpreting-pvalue-histogram/
+# I struggle with the interpretation of my pvalues
+# the distribution is conservative - is something wrong with my test?
+# the plink output is not automatically adjusted, I checked the manual
+# we expect the results of a high-throughput experiment to resemble 
+# a combination of a uniform distribution (from the null hypotheses) and a
+# distribution with an overabundance of low p-values (from the non-null hypotheses).
+
+# maybe check for quality control
+# to test for departures from uniformity anywhere between 0 and 1, not necessarily only among low p-values.
+# With a binwidth of 0.05, this amounts to checking 20 bins,
+# and therefore using a corrected significance threshold of 0.05/20 = 0.0025, or equivalently, a frequency
+# threshold of F0.9975(m, b). For the data from the study by Fischl et al. [3] in Figure 4, m = 23,332
+# and b = 0.05, so the frequency threshold is 1261.
+# Let b denote the bin width of the histogram
+# b <- 0.03
+# # m denote the number of hypotheses being tested
+# m <-  nrow(clean_snp_in_long_seq)
+# # Quality control threshold :
+# h <- qbinom(p = 1 - b * 0.05, size = m, prob = b)
+# # proportion of SNPs with pvalue of 1 0.003880331
+# # length(clean_snp_in_long_seq$P[clean_snp_in_long_seq$P == 1]) / nrow(clean_snp_in_long_seq) * 100
+# 
+# ggplot(data = clean_snp_in_long_seq, aes(clean_snp_in_long_seq$P)) +
+#   geom_histogram(binwidth = 0.03) +
+#   geom_abline(aes(), intercept = h) +
+#   labs(title = "Fisher raw p-values from coding-only data maf>0.05", 
+#        subtitle = "quality threshold shows that the analysis power is low", 
+#        x = "unadjusted pvalues") 
+
+```
+
+Using Fisher (no population structure) allowed many SNPs with p-values around 1.
+
+# Fisher: Correcting for multiple adjustments
+After testing individually all 54,259 loci, we correct for multiple comparisons and retrieve loci with a p-value of less than 5%. 
+We use a very conservative approach: the correction with false discovery rate by Benjamini and Hochberg method.
+
+```{r, eval = TRUE, echo = FALSE}
+# adjust the p-value using Benjamini and Hochberg method
+pvalue_vec <- clean_snp_in_long_seq$P
+names(pvalue_vec) <- clean_snp_in_long_seq$SNP
+all_adjusted_pvalues <- p.adjust(pvalue_vec, method = "BH", n = length(pvalue_vec))
+clean_snp_in_long_seq$adj_pvalue <- all_adjusted_pvalues
+
+# Are any adjusted pvalues lower than 0.05 ?
+if(sum(clean_snp_in_long_seq$adj_pvalue <= 0.05) == 0){
+  print("None of the adjusted pvalues are lower than 0.05")
+} else {
+  print(paste(sum(clean_snp_in_long_seq$adj_pvalue <= 0.05), "adjusted pvalues are lower than 0.05"))
+}
+# 2488 adjusted pvalues are lower than 0.05
+```
+
+
+# Fisher:  Manhattan plot
+
+```{r, eval = TRUE, echo = FALSE}
+# import file with scaffold name and number of SNPs
+scaff_stats_df <- read.table(file = "2019-04-02-flye-Pheidole-genic-fakesnp-snp-per-contig.txt", header = FALSE, sep = "")
+# name columns
+colnames(scaff_stats_df) <- c("SNP_num","scaffold_names")
+# order by number of SNPs
+ordered_scaff_stats_df <- scaff_stats_df[order(-scaff_stats_df$SNP_num), ]
+# change into dataframe
+ordered_scaff_stats_df <- as.data.frame(ordered_scaff_stats_df)
+
+# make a small data.frame of scaffold names and ids (num of snp)
+scaffold_df <- as.data.frame(cbind(as.character(ordered_scaff_stats_df$scaffold_names), c(1:nrow(ordered_scaff_stats_df))))
+# name columns
+colnames(scaffold_df) <- c("scaf_names", "scaf_ids")
+
+
+# import file with scaffold name and length
+scaff_length_df <- read.table(file = "intersected.contig.length", header = FALSE, sep = "")
+# name columns
+colnames(scaff_length_df) <- c("scaffold_names", "scaffold_length")
+# change contig names from short to long form
+scaff_length_df$scaffold_names <- gsub(pattern = "Ppal_E.", x = scaff_length_df$scaffold_names, replacement = "")
+scaff_length_df$scaffold_names <- gsub(pattern = "$", x = scaff_length_df$scaffold_names, replacement = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon")
+# add a row for the fake contig and SNP
+scaff_length_df <- rbind(c("contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", "72141"),
+      scaff_length_df)
+scaff_length_df$scaffold_length <- as.numeric(scaff_length_df$scaffold_length)
+# order by number of SNPs
+ordered_scaff_length_df <- scaff_length_df[order(-scaff_length_df$scaffold_length), ]
+# change into dataframe
+ordered_scaff_length_df <- as.data.frame(ordered_scaff_length_df)
+
+
+# make a small data.frame of scaffold names and ids (length)
+scaffold_length_df <- as.data.frame(cbind(as.character(ordered_scaff_length_df$scaffold_names), c(1:nrow(ordered_scaff_length_df))))
+# name columns
+colnames(scaffold_length_df) <- c("scaf_names", "scaf_ids")
+
+# create new columns for ids in the large dataframe
+clean_snp_in_long_seq$scaf_ids <- scaffold_df$scaf_ids[match(clean_snp_in_long_seq$CHR, scaffold_df$scaf_names)]
+
+clean_snp_in_long_seq$scaf_length_ids <- scaffold_length_df$scaf_ids[match(clean_snp_in_long_seq$CHR, scaffold_length_df$scaf_names)]
+
+#head(clean_snp_in_long_seq)
+
+# keep only the important columns
+manhattan_df <- clean_snp_in_long_seq[, c("BP", "SNP", "adj_pvalue", "scaf_ids", "scaf_length_ids", "P")]
+manhattan_df$BP <- as.numeric(manhattan_df$BP)
+manhattan_df$P <- as.numeric(manhattan_df$P)
+manhattan_df$adj_pvalue <- as.numeric(manhattan_df$adj_pvalue)
+manhattan_df$scaf_ids <- as.numeric(as.character(manhattan_df$scaf_ids))
+manhattan_df$scaf_length_ids <- as.numeric(as.character(manhattan_df$scaf_length_ids))
+
+# Plot figure by ordering contigs by total number of SNPs
+#pdf(file = "manhattan_df_unadjusted.pdf")
+#manhattan(manhattan_df, chr = "scaf_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "54,262 SNPs in linkage equilibrium in 3 Pheidole populations", xlab = "Scaffolds ordered by total number of SNPs")
+#dev.off()
+
+# Plot figure by ordering contigs by total length
+#pdf(file = "2019-03-25-manhattan_df_by_length.pdf")
+#manhattan(manhattan_df, chr = "scaf_length_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "54,262 SNPs in linkage equilibrium in 3 Pheidole populations", xlab = "Scaffolds ordered by length")
+#dev.off()
+
+# Plot manhattan plot for only the 10 longuest contigs
+manhattan_df_ten_longuest_contigs <- subset(manhattan_df, manhattan_df$scaf_length_ids %in% 1:10)
+# manhattan(manhattan_df_ten_longuest_contigs, 
+#           chr = "scaf_length_ids", 
+#           bp = "BP", 
+#           p = "P", 
+#           snp = "SNP", 
+#           suggestiveline = -log10(0.05), 
+#           genomewideline = FALSE,
+#           main = "Fisher: SNPs in linkage equilibrium in all populations for 10 longest scaffolds", 
+#           xlab = "Scaffolds ordered by length")
+# 
+# # Plot manhattan plot for only the 20 longuest contigs
+# manhattan_df_twenty_longuest_contigs <- subset(manhattan_df, manhattan_df$scaf_length_ids %in% 1:20)
+# manhattan(manhattan_df_twenty_longuest_contigs, chr = "scaf_length_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "Fisher: SNPs in linkage equilibrium in all populations for 20 longest scaffolds", xlab = "Scaffolds ordered by length")
+# 
+# # Plot manhattan plot for only the 10 contigs with the most SNPs
+# manhattan_df_ten_SNPrich_contigs <- subset(manhattan_df, manhattan_df$scaf_ids %in% 1:10)
+# manhattan(manhattan_df_ten_SNPrich_contigs, chr = "scaf_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "Fisher: SNPs in LE in all populations for the 10 contigs with the most SNPs", xlab = "Scaffolds ordered by total SNP counts")
+# 
+# # Plot manhattan plot for only the 20 contigs with the most SNPs
+# manhattan_df_twenty_SNPrich_contigs <- subset(manhattan_df, manhattan_df$scaf_ids %in% 1:20)
+# manhattan(manhattan_df_twenty_SNPrich_contigs, chr = "scaf_ids", bp = "BP", p = "P", snp = "SNP", suggestiveline = -log10(0.05), main = "Fisher: SNPs in LE in all populations for the 20 contigs with the most SNPs", xlab = "Scaffolds ordered by total SNP counts")
+
+# Plot manhattan plot for only the 10 longuest contigs + fake SNP
+manhattan_df_ten_ANDfake_longuest_contigs <- rbind(manhattan_df_ten_longuest_contigs,
+                                                   subset(manhattan_df, manhattan_df$scaf_length_ids %in% "531"))
+
+manhattan(manhattan_df_ten_ANDfake_longuest_contigs,
+          chr = "scaf_length_ids",
+          bp = "BP",
+          p = "P",
+          snp = "SNP", 
+          suggestiveline = -log10(0.05), 
+          genomewideline = FALSE,
+          highlight = "contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
+          main = "Fisher: \n SNPs in linkage equilibrium in all populations \n for 10 longest scaffolds and fake green SNP", xlab = "Scaffolds ordered by length")
+
+
+```
+
+With a Fisher test, the fake SNP is differentiated.
+
+# Conclusion
+- Regression analysis does not isolate my fake SNP.
+- Fisher analysis does isolate my fake SNP.
+- The differences between regression analysis and Fisher test are: 
+    - population structure is taken in consideration only in regression, not in Fisher test
+    - allele counting in Fisher, logistic regression in the other
+    - in the manual, it is mentioned that between the two models, "The difference may be particularly large for very rare alleles (i.e. if the SNP is monomorphic in cases or controls, then the logistic regression model is not well-defined and asymptotic results might not hold for the basic test either)."
+
+To do:
+- Fisher test on Bruniquel-only dataset
+
+

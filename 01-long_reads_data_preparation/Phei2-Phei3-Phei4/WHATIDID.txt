@@ -1,0 +1,22 @@
+3 Nanopore flowcells (runs)
+
+1. male "Phei2"
+2. male "Phei3"
+3. pool_of_35_workers "Phei4"
+
+1. and 2. were prepped/run 2D
+3. was run 1D
+
+Folders:
+raw_data	contains the raw data as produced by MinION, 1 files per read, compressed in a rar-archive. Subfolders might exists with several raw_data files per flowcell. These come from e.g. re-starting the sequencing several times, and because of simple manual separation to enable handling/moving of files. 1copy in apocrita, 1 copy on hive
+
+base_called	the downloaded fast5 files (1 per read, compressed in rar archives) after basecalling in the cloud (Metrichor). basecalling separated reads into pass/fail, based on a simple Q threshold. 2D basecalling will furthermore create template, complement and 2D --> for sequences of the first strand, the complementary second strand and then the merged 2D. Some runs were split into several rar archives for facilitating handling/zipping the data while it was running (to prevent overflow of harddrive) - they are arbitrarily names. The files are 10x larger than the rawdata, only one copy on Hive
+
+extracted_fastq	fastq reads (1 per read) extracted from fast5 files via PoRe R-package. according to base_called files/folders. only one copy on Hive
+
+merged_fastq	for each group/run, single-file fastq's were merged into a fastq file. two copies, one on apocrita, one on hive
+
+QCs	2copies, one on apocrita, one on hive
+
+
+

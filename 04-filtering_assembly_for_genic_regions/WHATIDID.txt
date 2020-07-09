@@ -1,0 +1,125 @@
+#!/bin/sh
+
+###############################################################################
+### Aim: ###
+# Use Solenopsis GFF to filter only Pheidole Minion genic regions
+# reduce the noise of Pheidole dataset
+# assumptions: what we are searching for is in the genic regions
+
+###############################################################################
+### Project preparation ###
+module load blast+/2.7.1
+module load bedtools
+
+cp -a 2019-02-21-filter_PpalB_genic_regions 2019-03-18-filter_PpalE_genic_regions
+
+cd 2019-03-18-filter_PpalE_genic_regions
+
+mkdir input
+
+cd input
+
+# obtain protein sequences for all genic regions from Solenopsis
+# from Ensembl gff version 41
+ln -s ~/db/genomic/S_invicta/2018-Sinv_gnG_ensembl41/Solenopsis_invicta.Si_gnG.pep.all.fa.gz solenopsis-genic-regions.fa.gz
+
+ln -s ~/db/genomic/Pheidole_pallidula/2019-03-05-Ppal_E/Ppal_E.fasta
+
+ln -s ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/2019-02-06-109samples-maf10percent.recode.vcf pheidole109samples.vcf
+
+cd ..
+
+mkdir -p ~/monthly_autoScratch/2019-03-18-filter_PpalE_genic_regions
+ln -s  ~/monthly_autoScratch/2019-03-18-filter_PpalE_genic_regions tmp
+
+mkdir result
+
+###############################################################################
+### Analysis ###
+
+# step 1: blast Solenopsis proteins againt Pheidole nucleotides
+# query is Solenopsis proteins
+# database is Pheidole nucleotides
+
+# how many scaffolds in the reference? 4130
+grep ">" input/Ppal_E.fasta | wc -l
+grep ">" input/Ppal_E.fasta > all-pheidole-scaffolds.txt
+
+# make the database
+makeblastdb -dbtype nucl \
+            -title Ppal_E \
+            -in input/Ppal_E.fasta \
+            -out tmp/Ppal_E
+
+# identify database sequences encoding proteins similar to the query (protein)
+# Blast hits with E-value < 0.01 : good hit for homology matches
+gzip -dc input/solenopsis-genic-regions.fa.gz | \
+tblastn -query - \
+        -out tmp/Phei-genic-output-blast.txt \
+        -evalue 1e-3 \
+        -outfmt "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore qlen qcovs" \
+        -db tmp/Ppal_E
+
+
+# investigate result
+# hits when evalue is 0, identity is close to 100
+wc -l Phei-genic-output-blast.txt
+# 1,234,737 matches
+cp tmp/Phei-genic-output-blast.txt result/.
+
+# remove scaffolds with no protein-coding regions
+summary_stats.Rmd
+
+# half of the scaffolds have no hits
+# their length is below average (< 7000bp)
+# the scaffolds with no predicted genic regions are listed here
+result/non_genic_scaff_names
+
+
+################################################################################
+##### Extract only the coding regions from the VCF ############################
+
+# Step 1: Remove small fragments from the blast output (qlen)
+sort -n -k11 -r result/Phei-genic-output-blast.txt > test
+# The average length of protein: 300aa, so 900nt
+# average here 757, I cut off all fragments smaller than 300aa
+summary_stats.Rmd
+
+# Step 2: obtain bed file (id | sstart | send)
+result/out.bed
+# change the order of the start and finish
+awk '{OFS="\t"; if ($3>$2) {print} else {print $1,$3,$2}}' result/out.bed > tmp/strand.corrected.out.bed
+
+
+# Step 3: Order the intervals in a file
+# by chromosome and then by start position in ascending order
+bedtools sort -i tmp/strand.corrected.out.bed > tmp/sorted.out.bed
+
+# Step 4: remove redundancy
+# Maximum distance between features allowed for features to be merged
+# 100 nucleotides between two features will merge the two lines into one
+bedtools merge -d 100 -i tmp/sorted.out.bed > tmp/no.redundant.out.bed
+# from 917,110 genes to 62,281 # was it too stringent?
+
+# Step 5: feature intersection
+# do any of the features in the two sets “overlap” with one another?
+bedtools intersect -header -a input/pheidole109samples.vcf -b tmp/no.redundant.out.bed > tmp/intersected.vcf
+
+# number of variants: before: 812760; after : 113,234
+grep -v "^#" input/pheidole109samples.vcf | wc -l
+grep -v "^#" tmp/intersected.vcf | wc -l
+
+# copy into result
+cp tmp/intersected.vcf result/.
+
+# check number of contigs and their length
+# list of contigs
+bcftools query --format '%CHROM\n' result/intersected.vcf | sort | uniq > intersected.contig.list
+# change for short version >Ppal_E.contig_1
+sed 's/contig_/Ppal_E.contig_/' intersected.contig.list | sed 's/_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon//' > intersected.contig.list.shorter
+
+# obtain original reference.fasta, subset to only those contigs
+seqtk subseq input/Ppal_E.fasta intersected.contig.list.shorter > tmp/Ppal_E-coding_only.fasta
+
+# obtain length of each sequence
+seqtk comp tmp/Ppal_E-coding_only.fasta | cut -f 1,2 > intersected.contig.length

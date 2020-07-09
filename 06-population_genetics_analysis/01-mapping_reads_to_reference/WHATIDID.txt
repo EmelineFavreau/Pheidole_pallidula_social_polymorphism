@@ -1,0 +1,228 @@
+!/bin/sh
+
+###############################################################################
+### Aim: ###
+
+# map Illumina reads to MinION assembly
+
+
+###############################################################################
+### Project preparation ###
+module load bowtie2/2.3.4
+module load samtools/1.9
+module load qualimap
+
+mkdir input
+cd input
+mkdir reference
+cd reference
+# input is MinION assembly
+ln -s ../../../../input/2019-03-15-map_reads_to_minion_flye/reference/reference.fasta.gz .
+cd ..
+mkdir reads
+cd reads
+# input is Illumina reads
+ ln -s ../../../../input/2019-03-15-map_reads_to_minion_flye/reads/* .
+
+cd ../../
+
+
+mkdir result
+
+mkdir -p ~/monthly_autoScratch/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye
+ln -s ~/monthly_autoScratch/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye tmp
+
+mkdir tmp/bamQC
+mkdir /tmp/bamQC
+ln -s /tmp/bamQC tmp2
+
+
+# add a space in archive for this analysis
+mkdir -p ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye
+
+
+###############################################################################
+### Analysis ###
+
+# Step 1: Build the reference index
+bowtie2-build --threads 33 input/reference/reference.fasta.gz tmp/reference 1> tmp/reference_indexing.log 2> tmp/reference_indexing.err
+
+# how many nucleotides in the reference?
+zcat minion.fq.gz | seqtk comp - | awk '{ sum+=$2} END {print sum}'
+5,098,525,162
+
+
+# Step 2: Map each read pair to the assembly
+# get clean names of all samples
+samples=`ls input/reads/*.gz | cut -d '/' -f 3 | cut -d '.' -f 1 | sort | uniq`
+# create a tmp directory
+mkdir tmp/mappings
+# looping through samples - started at 16:45 on Tuesday, will take 3 days
+while read -r sample; do
+# number of threads just below what interactive node needs
+# local alignment
+   bowtie2 --threads 20 --local -x tmp/reference \
+           -1 input/reads/${sample}.R1.fastq.gz \
+           -2 input/reads/${sample}.R2.fastq.gz \
+           | samtools view -b - > tmp/mappings/${sample}.bam
+done <<< "$samples"
+
+# copy results to archive, ln to result
+rsync -avx --human-readable --progress tmp/mappings/*.bam ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye/.
+cd result
+ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye/*.bam .
+cd ..
+
+# Step 3: Calculate coverage per scaffold
+# Some scaffolds might be covered by not that many reads.
+# we tend to lose confidence in low coverage (sequencing errors, for eg)
+# this will help filtering out some scaffolds during association test
+
+while read -r sample; do
+  # bam file needs to be aligned
+  samtools sort -@ 30 results/${sample}.bam -o tmp2/${sample}.sorted.bam
+  # based on Eckart's example
+  # nw Number of windows
+  # nr Number of reads analyzed in a chunk
+  # hm Minimum size for a homopolymer to be considered in indel analysis
+  # nt Number of threads
+  qualimap bamqc -bam tmp2/${sample}.sorted.bam --java-mem-size=50G -nw 4000 -nr 10000 -hm 6 -nt 30 -outdir tmp/bamQC/${sample}
+done <<< "$samples"
+
+# from qualimap report
+# MinION-flye reference size: 288,617,932
+
+# Step 4: investigating genome coverage
+# prepare the data
+while read -r sample; do
+  # visual sanity check that the line 127 is constantly the start of the chromosome stats
+  grep -n ">>>>>>> Coverage per contig" tmp/bamQC/${sample}/genome_results.txt
+  # reduce the file from line 129 onward (there are two blank lines after 127)
+  # remove the two trailing blank lines
+  # take the 2nd (scaffold name) and 5th (mean coverage) columns
+  tail -n+129 tmp/bamQC/${sample}/genome_results.txt | head -n -2 | cut -f 2,5 > tmp/bamQC/${sample}.cov.txt
+done <<< "$samples"
+
+# copy in result
+ cat tmp/bamQC/*cov.txt* > result/all.cov.txt
+
+# check average coverage per scaffold over all bam
+awk '{sum+=$2} END { print "Average = ",sum/NR}' result/all.cov.txt
+# 11x
+# copy results in archive - not best practice but this is taking so much space
+rsync -avx --human-readable --progress tmp/mappings/*.bam
+~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye/.
+
+# link all alignments to results
+cd result
+ln -s 2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye/*.bam .
+
+
+#### update June 2019
+# I need the qualimap reports that I did not save !!
+unlink tmp
+mkdir -p ~/scratch/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye
+ln -s ~/scratch/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye tmp
+
+mkdir result/bamQC
+
+
+mkdir /tmp/bamQC
+ln -s /tmp/bamQC tmp2
+
+samples=`ls input/reads/*.gz | cut -d '/' -f 3 | cut -d '.' -f 1 | sort | uniq`
+
+while read -r sample; do
+  # bam file needs to be aligned
+  samtools sort -@ 30 result/${sample}.bam -o tmp2/${sample}.sorted.bam
+  # based on Eckart's example
+  # nw Number of windows
+  # nr Number of reads analyzed in a chunk
+  # hm Minimum size for a homopolymer to be considered in indel analysis
+  # nt Number of threads
+  qualimap bamqc -bam tmp2/${sample}.sorted.bam --java-mem-size=50G -nw 4000 -nr 10000 -hm 6 -nt 30 -outdir report/bamQC/${sample}
+done <<< "$samples"
+
+# move reports to archive source destination
+rsync -av --human-readable --progress report/bamQC/* ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye
+
+# soft link to result
+cd result/bamQC
+ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye/bamQC/* .
+
+# remove large files
+rm -rf report
+
+
+# obtain important statistics
+grep -E "number of mapped reads" result/bamQC/*/genome_results.txt | cut -d "(" -f 2 | cut -d "%" -f 1 > all-samples-mapped-reads-percent
+grep -E "number of mapped reads" result/bamQC/*/genome_results.txt | cut -d "(" -f 1 | cut -d "=" -f 2 | sed "s/^ //" | sed "s/,//" | sed "s/,//" > all-samples-mapped-reads-count
+grep -E "mean mapping quality" result/bamQC/*/genome_results.txt | cut -d "=" -f 2 | cut -d " " -f 2 > all-samples-mean-mapping-quality
+grep -E "GC percentage" result/bamQC/*/genome_results.txt | cut -d "=" -f 2 | cut -d " " -f 2 | cut -d "%" -f 1 > all-samples-gc-percentage
+grep -E "number of mapped reads" result/bamQC/*/genome_results.txt | cut -d "/" -f 3 > sample-list
+grep -E "number of mismatches" result/bamQC/*/genome_results.txt | cut -d "=" -f 2 > all-samples-number-of-mismatches
+
+# paste stats together into a table
+paste sample-list \
+      all-samples-mapped-reads-percent \
+      all-samples-mapped-reads-count \
+      all-samples-mean-mapping-quality \
+      all-samples-gc-percentage \
+      all-samples-number-of-mismatches \
+      > all-samples-qualimap-stats
+
+
+# how to find unmapped reads in sam files
+module load samtools
+
+
+# number of unmapped reads per sample
+
+touch sample-unmapped-total.txt
+
+for sampleName in $(cat sample-list); do
+  unmappedR=`samtools view -f 4 -c result/bam_file/${sampleName}.bam`
+
+  totalR=`grep -E "number of reads" result/bamQC/${sampleName}/genome_results.txt | cut -d "=" -f 2 | sed 's/,//g' | sed 's/ //g'`
+
+  echo ${sampleName} ${unmappedR} ${totalR} >> sample-unmapped-total.txt
+
+done
+
+
+head sample-unmapped-total.txt
+
+
+################################################################################
+# for IGV viewing of reference and bam files
+
+# update few things here
+# scratch space now is:
+mkdir -p ~/scratch/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye
+
+unlist tmp
+
+ln -s ~/scratch/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye tmp
+
+cd tmp
+
+# unzip and copy in tmp the previous reference (ending in pilon_pilon)
+gzip -d -c ~/db/genomic/Pheidole_pallidula/2019-03-05-Ppal_E/source_directory/2019-02-19-Ppal_minion_flye/scaffolds_polished.fasta.gz > reference_pilon_pilon.fasta
+
+# make index
+module load samtools/1.9
+samtools faidx reference_pilon_pilon.fasta
+
+cd ..
+
+mv tmp/reference_pilon_pilon.fasta.fai result/.
+
+rsync -avx --human-readable --progress result/reference_pilon_pilon.fasta.fai /data/home/btx077/archive/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye/.
+
+rsync -avx --human-readable --progress tmp/reference_pilon_pilon.fasta /data/home/btx077/archive/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye/.
+
+# corresponding bam files and bai files are here:
+/data/home/btx077/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling
+
+# reference.fa and reference.fai are here:
+/data/archive/archive-SBCS-WurmLab/eafavreau/2019-03-05-association_analysis_flye_assembly/2019-03-15-map_reads_to_minion_flye

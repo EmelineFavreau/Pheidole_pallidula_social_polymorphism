@@ -1,0 +1,107 @@
+!/bin/sh
+
+###############################################################################
+### Aim: ###
+
+# call variants from MinION-flye assembly
+
+
+###############################################################################
+### Project preparation ###
+module load samtools/1.9
+module load qualimap
+module load freebayes/1.2.0
+
+mkdir input
+cd input
+mkdir alignments
+cd alignments
+ln -s ../../../../input/2019-03-07-variant_calling/alignments/*.bam .
+cd ..
+ln -s ../../../input/2019-03-15-map_reads_to_minion_flye/reference/reference.fasta.gz
+cd ..
+
+mkdir result
+
+mkdir logs
+
+mkdir ~/monthly_autoScratch/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling
+ln -s ~/monthly_autoScratch/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling tmp
+mkdir /tmp/minionvcf
+ln -s /tmp/minionvcf tmp2
+mkdir tmp/reference
+
+# add a space in archive for this analysis
+mkdir -p ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling
+
+################################################################qstat###############
+### Analysis ###
+
+# Step 1: Prepare the bam files
+# create list of sample names
+ls input/alignments/*.bam | cut -d "/" -f 3 | cut -d "." -f 1 > samples.txt
+# E15 is 7 times bigger than average, so will be treated differently
+grep -v -E "E15" samples.txt > 114samples.txt
+
+# E15 is outlier (file is 7 times bigger)
+# run this on fn6
+e15-manual.sh
+
+# prepare bams for Freebayes
+# bamaddrg does not multithread, so I sent the job on its own
+qsub bamaddrg.sh
+
+# rest of preparation, multithreaded
+qsub prepare-bams-for-freebayes.sh
+
+# copy bam and bai in archive from tmp2
+rsync -avx --human-readable --progress tmp/*.rg.sorted.fixmate.position.markdup.bam ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/.
+rsync -avx --human-readable --progress tmp/*.rg.sorted.fixmate.position.markdup.bam.bai ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/.
+
+# soft links to result
+cd result
+ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/*.bam.bai .
+ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/*.bam .
+cd ..
+
+# make a list for all samples to run freebayes parallel
+ls tmp/*.rg.sorted.fixmate.position.markdup.bam > freebayes-parallel-input-list.txt
+ls tmp/E15-P.rg.sorted.fixmate.position.markdup.bam >> freebayes-parallel-input-list.txt
+
+
+
+---
+# Step 2: Prepare the reference
+samtools faidx input/reference.fasta.gz > tmp/reference/reference.fa.fai
+
+
+
+
+---
+# Step 3: Call variants
+# consider top 4 best alleles, in srm1
+# Freebayes removes duplicated reads
+
+tmux new-session -s freebayeslessalleles
+
+qlogin -l excl=true -l node_type=srm -l h_rt=240:00:00 -pe smp 36 -l highmem
+
+cd 2019-03-05-association_analysis_flye_assembly/result/2019-03-07-variant_calling
+
+module load freebayes/1.2.0
+
+# Run freebayes in parallel on 100000bp chunks of the ref
+freebayes-parallel <(fasta_generate_regions.py tmp/reference/reference.fa.fai 100000) ${NSLOTS} -f tmp/reference/reference.fa --use-best-n-alleles 2 --bam-list freebayes-parallel-input-list.txt > tmp/minionflye-115samples-two-alleles.vcf
+
+tmux kill-session
+
+# save to archive - Tuesday: I copied a version of vcf (69%)
+rsync -avx --human-readable --progress tmp/minionflye-115samples-two-alleles.vcf ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/.
+
+# make a soft link to result
+cd result
+ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/minionflye-115samples-two-alleles.vcf .
+
+
+# obtain number of snps before filtering: 27006673
+cat result/minionflye-115samples-less_alleles.vcf | grep -v "#" | cut -f1 | wc -l 
