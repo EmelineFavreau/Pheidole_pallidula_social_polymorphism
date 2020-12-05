@@ -1,0 +1,651 @@
+---
+title: 'Pheidole GWAS: frequency of common alleles for 46 sig snps'
+author: "Emeline Favreau"
+date: "5th December 2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Data
+109 diploid workers, each representative of one colony, from one of the following regions:
+
+ - Bruniquel (France): 69 samples, 16 monogynous and 53 polygynous
+
+ - Vigliano (Italy): 23 samples, 16 monogynous and 7 polygynous
+
+ - Pyrenees: 16 samples, 5 monogynous and 11 polygynous
+
+Each sample has an estimated genome coverage of 6x.
+
+# Assembly
+The assembly was created from MinION sequencing of a mix of workers and males from 2 monogynous colonies from France and Italy.
+Ppal_gnE assembly is 287 Mb long, with an N50 length of 452kb and near-complete set of single-copy orthologous genes (C:98.8%[S:98.1%,D:0.7%],F:0.4%,M:0.8%,n:1658). 
+There are ~1500 contigs.
+
+# Variant Calling
+We performed a reference-based variant calling using PPal_gnE and 115 sets of Illumina raw reads. 
+We first mapped raw reads of each sample to the assembly using Bowtie2 version 2.3.4 (local alignment), obtaining 115 BAM files with alignments private to each sample.
+We then used FreeBayes version 1.2.0 (--use-best-n-alleles 2) to call the variants, obtaining one vcf file. 
+We filtered the variant file with Bcftools 1.8, Tabix 0.2.5 and VCFtools 0.1.15. 
+Briefly, we sorted and indexed the VCF file, we kept biallelic SNPs, with a minimum quality phred of 30 and minimum sample support of 75% (--remove-indels --minQ 30 --min-alleles 2 --max-alleles 2). 
+Six samples were removed from the analysis due to being outliers as seen on PCA plot. 
+We filtered out variants that were absent from at least one population (Bruniquel, Italy, Pyrenees).
+We filtered out variants that were monomorphic in any population (Bruniquel, Italy, Pyrenees).
+We did not remove SNPs in linkage disequilibrium.
+
+# Association Analysis
+We performed a Fisher test of allele count for each SNP between monogynous samples and polygynous samples.
+First for the whole dataset, and then for each of the two main populations (France and Italy).
+We adjusted the p-values for multiple comparisons (Bonferroni).
+
+
+```{r import libraries, eval = TRUE, echo = FALSE, include = FALSE}
+
+
+# load all the libraries
+# get libraries
+basic_libraries <- c("ggplot2",
+                     "gridExtra",
+                     "dplyr")
+
+for (lib in basic_libraries) {
+        if (require(package = lib, character.only = TRUE)) {
+                print("Successful")
+        } else {
+                print("Installing")
+                install.packages(lib)
+                library(lib, character.only = TRUE )
+        }
+}
+```
+
+```{r import data for frequency plot, eval = TRUE, echo = FALSE, include = FALSE}
+# import names of top ten snps
+forty_sig_snps <- read.table("2019-03-08-109samples-maf10percent/sig_46_snp_vec",
+                         header           = FALSE,
+                         stringsAsFactors = FALSE)
+
+# import the plink output 75 support
+plink_output_fisher_coding_non_coding75 <- read.csv("2019-03-08-109samples-maf10percent/result/2020-05-04-108samples-maf005-NOmonomorphic-75support.assoc.fisher", 
+                                                    header = TRUE,
+                                                    sep = "")
+
+# import the matrix for those SNPs and neighbours
+snp_matrix <- read.table("2019-03-08-109samples-maf10percent/result/2020-12-05-forty-six-snps-snp_matrix.txt",
+                                   header = FALSE,
+                                   stringsAsFactors = FALSE)
+
+# import the sample list vec
+# need to create this on apocrita
+sample_list_vec <- read.table("2019-03-08-109samples-maf10percent/result/2020-12-05-forty-six-snps-sample_names.txt",
+                                        header = FALSE,
+                                        stringsAsFactors = FALSE,
+                                        col.names = "sample_name")
+
+# import length of contig
+# need to create this on apocrita
+coding_non_coding_length <- read.csv("2019-03-08-109samples-maf10percent/Ppal_E-contig-length-clean",
+                                     header = FALSE,
+                                     sep = "\t")
+
+```
+
+```{r filtering test with 075 support but polymorphic, eval = TRUE, echo = FALSE}
+# Here the code ofr 121,786 SNPs (75% sample support, polymorphic within a population)
+#head(plink_output_fisher_coding_non_coding75, 2)
+
+# adjust for multiple comparisons
+plink_output_fisher_coding_non_coding75$adj_pvalue <- p.adjust(plink_output_fisher_coding_non_coding75$P, 
+                                                               method = "BH")
+
+#summary(plink_output_fisher_coding_non_coding75$adj_pvalue)
+```
+
+
+
+# Evaluating the 46 significant SNPs: frequency of common allele
+
+Here we visualise the frequency of common allele for each significant locus, separating the data by social type.
+We expect a different proportion M/P in those SNPs compared to other, non-significant SNPs.
+We subset the data for those 46 significant SNPs and their 25 neighbouring loci (upstream and downstream).
+
+```{r prepare file for bedtools for 46 snps, eval = TRUE, echo = FALSE, warning = FALSE}
+
+# preparation: make a file for bcftools to subset the VCF for 
+# 46 SNPs and their 25 neighbours on each side
+
+# name columns
+colnames(forty_sig_snps) <- c("snp_id", "snp_names")
+
+colnames(coding_non_coding_length) <- c("contig", "length")
+
+# obtain SNP names
+sig_snp_list <- forty_sig_snps$snp_names
+
+# make a sig_contig_list
+sig_contig_list <- gsub(x = sig_snp_list,
+                        pattern = ":.*",
+                        replacement = "")
+
+# calculate adjusted p value
+plink_output_fisher_coding_non_coding75$adj_pvalue <- p.adjust(plink_output_fisher_coding_non_coding75$P, method = "BH")
+
+# change class
+coding_non_coding_length$contig <- as.character(coding_non_coding_length$contig)
+
+# order by decreasing length
+coding_non_coding_length_sorted <- coding_non_coding_length[order(coding_non_coding_length$length, decreasing = TRUE), ]
+
+# add a column for length rank
+coding_non_coding_length_sorted$rank <- 1:nrow(coding_non_coding_length_sorted)
+
+# add a contig length rank
+plink_output_fisher_coding_non_coding75$contig_rank_by_length <- coding_non_coding_length_sorted$rank[match(plink_output_fisher_coding_non_coding75$CHR, coding_non_coding_length_sorted$contig)]
+  
+# order original data by contig rank (length), then by snp position 
+plink_output_fisher_coding_non_coding75 <- plink_output_fisher_coding_non_coding75[with(plink_output_fisher_coding_non_coding75,
+                                                                                    order(contig_rank_by_length, BP)), ]
+
+# make a result object: contig, locus position, p values
+temporary_region_file <- as.data.frame(matrix(NA, ncol = 3))
+
+# name columns
+colnames(temporary_region_file) <- c("CHR", "BP", "adj_pvalue")
+
+# loop through the sig contigs
+for(contig_position in 1:length(sig_contig_list)){
+ 
+      # subset df for just this contig
+      test <- subset(plink_output_fisher_coding_non_coding75,
+                     subset = CHR == sig_contig_list[contig_position])
+      
+      # change class
+      test$SNP <- as.character(test$SNP)
+      
+      # obtain the rank of the SNP in the contig
+      sig_snp_rank <- as.numeric(which(test$SNP == sig_snp_list[contig_position]))
+      
+      if(sig_snp_rank >= 25){
+        
+          # select 25 neighbouring SNPs on each side
+          temporary_region_file <- rbind(temporary_region_file,
+                                         test[(sig_snp_rank-25):(sig_snp_rank+25), c("CHR", "BP", "adj_pvalue")])
+      } else {
+        # select all SNPs before the sig SNP, and up to 50 following SNPs
+          temporary_region_file <- rbind(temporary_region_file,
+                                         test[1:50, c("CHR", "BP", "adj_pvalue")])
+      }
+
+}      
+
+# remove the NA
+updated_region_file <- temporary_region_file[complete.cases(temporary_region_file), ]
+
+# rename columns for bcftools
+colnames(updated_region_file) <- c("CHROM", "POS", "adj_pvalue")
+
+# save for subsetting VCF and obtaining the SNP matrix
+write.table(x        = updated_region_file,
+           file      = "2019-03-08-109samples-maf10percent/forty-six-snp-and-neighbours-region-file",
+           quote     = FALSE,
+           row.names = FALSE,
+           sep       = "\t")
+
+```
+
+```{r prepare snp matrix for 46 snps, eval = TRUE, echo = FALSE, warning = FALSE}
+
+
+# Prepare the plots
+# aim: in x axis, the loci
+# in y axis, the frequency of the most common allele
+
+# in snp_matrix, I can obtain the most common genotype for a given locus, either 0/0 or 0/1 or 1/1
+
+# remove first two columns (SNP names)
+snp_matrix_geno <- snp_matrix[ , 3:ncol(snp_matrix)]
+
+# create a vector for names
+colony_names <- sample_list_vec$sample_name
+
+# keep in vector the names of colony in each social type
+mono_samples <- grep(pattern = "-M", x = colony_names, value = TRUE)
+mono_samples <- c(mono_samples, "A56-N")
+poly_samples <- grep(pattern = "-P", x = colony_names, value = TRUE)
+poly_samples <- c(poly_samples, "I27-N", "andrea-N", "muna-N")
+
+# name the SNP matrix: colony names for columns, SNP names for rows
+colnames(snp_matrix_geno) <- colony_names
+rownames(snp_matrix_geno) <- snp_matrix$V1
+
+# check possibilities
+# unique(unlist(snp_matrix_geno))
+
+# change genotype code
+snp_matrix_geno[snp_matrix_geno == "0/0"] <- 0 
+snp_matrix_geno[snp_matrix_geno == "0/1"] <- 1
+snp_matrix_geno[snp_matrix_geno == "1/1"] <- 2
+snp_matrix_geno[snp_matrix_geno == "./."] <- NA
+
+```
+
+```{r prepare freq matrix for 46 snps, eval = TRUE, echo = FALSE, warning = FALSE}
+
+# collect all frequencies in a dataframe
+freq_mat <- matrix(NA, nrow = nrow(snp_matrix_geno), ncol = 2)
+
+# loop through each locus
+for(position in 1:nrow(snp_matrix_geno)){
+  
+  # subset to one locus
+  one_locus <- snp_matrix_geno[position, ]
+  
+  # transform to long format
+  one_locus_t <- as.data.frame(t(one_locus),
+                               stringsAsFactors = FALSE)
+  
+  # name the column
+  colnames(one_locus_t) <- "alt"
+  
+  # create a new column for reference allele
+  one_locus_t$ref <- 0
+  
+  # code the reference allele based on the alt allele code
+  # if the alt allele is coded 0, it means that the sample has 2 reference alleles
+  one_locus_t$ref[one_locus_t$alt == "0"] <- 2
+  
+  # if the alt allele is coded 1, it means that the sample has 1 reference allele
+  one_locus_t$ref[one_locus_t$alt == "1"] <- 1
+  
+  # if the alt allele is coded 2, it means that the sample has 0 reference allele
+  one_locus_t$ref[one_locus_t$alt == "2"] <- 0
+  
+  # change character to numeric
+  one_locus_t$alt <- as.numeric(one_locus_t$alt)
+
+  # obtain sum of each allele code
+  sum_alleles <- c(sum(one_locus_t$alt), sum(one_locus_t$ref))
+    
+  # find the most common allele in this locus
+  most_common_allele_column <- which.max(sum_alleles)
+  
+  # calculate the sum of most frequent allele for monogynous samples
+  sum_freq_allele_M <- sum(one_locus_t[rownames(one_locus_t) %in% mono_samples,
+                                       most_common_allele_column])
+  
+  # calculate the frequency of the most frequent allele in the monogynous samples (diploid, so 2 alleles * number of samples)
+  freq_common_allele_M <- sum_freq_allele_M / (length(mono_samples)*2)
+  
+  # calculate the sum of most frequent allele for polygynous samples
+  sum_freq_allele_P <- sum(one_locus_t[rownames(one_locus_t) %in% poly_samples,
+                                       most_common_allele_column])
+  
+  # calculate the frequency of the most frequent allele in the polygynous samples (diploid, so 2 alleles * number of samples)
+  freq_common_allele_P <- sum_freq_allele_P / (length(poly_samples)*2)
+  
+  # save the two frequencies
+  freq_mat[position, ] <- c(freq_common_allele_M, freq_common_allele_P)
+}
+
+# make into a dataframe
+freq_df <- as.data.frame(freq_mat, stringsAsFactors = FALSE)
+
+# name columns
+colnames(freq_df) <- c("Monogynous", "Polygynous")
+
+# add loci as new column
+freq_df$loci <- rownames(snp_matrix_geno)[1:nrow(freq_df)]
+
+# add contig as a new column
+freq_df$contig <- gsub(pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:.*", 
+                       x = freq_df$loci,
+                       replacement = "")
+
+# order loci in the same order as the manhattan plot
+freq_df <- freq_df[order(match(freq_df$loci,
+                               plink_output_fisher_coding_non_coding75$SNP)), ]
+
+# give factor to loci for ggplot order
+#freq_df$loci <- factor(freq_df$loci, levels = freq_df$loci)
+
+# make an extra column for signal
+freq_df$signal <- ifelse(freq_df$loci %in% sig_snp_list, "sig", "not_sig")
+
+# make an extra column for short snp name
+freq_df$short_SNP_name <- gsub(x = freq_df$loci,
+                               pattern = "contig.*_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:",
+                               replacement = "")
+
+# remove long name
+freq_df$short_SNP_name <- gsub(x           = freq_df$short_SNP_name,
+                               pattern     = "[A-Z].*",
+                               replacement = "")
+
+# transform to factor so that x axis is ordered by location
+# freq_df$short_SNP_name <- factor(freq_df$short_SNP_name,
+#                                  levels = freq_df$short_SNP_name)
+
+# make a short name for contig
+sig_contig_list_short <- gsub(x           = sig_contig_list,
+                              pattern     = "_pilon.*",
+                              replacement = "")
+
+
+updated_region_file$CHROM_short <- gsub(x           = updated_region_file$CHROM,
+                                        pattern     = "_pilon.*",
+                                        replacement = "")
+
+
+```
+
+```{r prepare plots for 46 snps, eval = TRUE, echo = FALSE, warning = FALSE}
+# make 46 plots of freq, each for the contig
+# make a list of plot names
+make_plot <- list()
+
+sig_contig_list_short <- gsub(x = sig_contig_list,
+                              pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon",
+                              replacement = "")
+
+# looping through each contig 
+for(position in 1:length(sig_contig_list)){
+  
+  # subset for one contig
+  freq_df_1 <- subset(freq_df,
+                      subset = contig == sig_contig_list_short[position])
+  
+  # add p value for plot with updated_region_file
+  freq_df_1$adj_pvalue <- updated_region_file$adj_pvalue[match(freq_df_1$short_SNP_name, updated_region_file$POS)]
+  
+  # subset the df for only the non-significant SNPs
+  freq_df_1_not_sig <- subset(freq_df_1, subset = signal == "not_sig")
+  
+  # subset the df for only the significant SNP
+  freq_df_1_sig     <- subset(freq_df_1, subset = signal == "sig")
+  
+  # make a contigency table (rows are M, P; columns are non_sig, sig)
+  freq_mat <- rbind(c(freq_df_1_sig$Monogynous, mean(freq_df_1_not_sig$Monogynous)),
+                    c(freq_df_1_sig$Polygynous, mean(freq_df_1_not_sig$Polygynous)))
+
+  # for each contig I get a p-value if the observed allele frequencies fit the expected allele frequencies
+  chisquare_result <- chisq.test(freq_mat)$p.value
+  
+  # number of SNPs
+  number_of_SNPs <- nrow(freq_df_1)
+  
+  # change class
+  freq_df_1$signal <- factor(freq_df_1$signal)
+  
+  # add a column
+  freq_df_1$to_annotate <- ifelse(freq_df_1$signal == "not_sig",
+                                  "no annotation",
+                                  "annotation")
+  # keep plotting to the list
+  make_plot[[position]] <- ggplot(freq_df_1) +
+                                 # plot P value
+                                  geom_line(aes(x     = short_SNP_name,
+                                                y     = adj_pvalue,
+                                                group = 1),
+                                            colour   = 'grey',
+                                            linetype = "dashed") +
+    
+                                   # plot allele frequency                           
+                                  geom_segment(aes(x    = short_SNP_name,
+                                                   xend = short_SNP_name,
+                                                   y    = Monogynous,
+                                                   yend = Polygynous),
+                                               color = "black",
+                                               size = 0.4) +
+    
+                                  geom_point(aes(x     = short_SNP_name,
+                                                 y     = Monogynous,
+                                                 color = "black",
+                                                 fill  = factor(signal)),
+                                             shape = 21, size = 1.5) +
+    
+                                  geom_point(aes(x     = short_SNP_name,
+                                                 y     = Polygynous,
+                                                 color = "black",
+                                                 fill  = factor(signal)),
+                                             shape = 22, size = 1.5) +
+                                 
+                                  scale_fill_manual(values = c("white", "black")) +
+    
+                                  scale_colour_manual(values = c("black", "black")) +
+                                  
+                                  
+                                  
+
+# 
+#                                   annotate("text",
+#                                            x = freq_df_1$short_SNP_name[4],
+#                                            y = 0.87,
+#                                            label = paste("\u03C7",
+#                                                          "^2 P =",
+#                                                          chisquare_result,
+#                                                          " (n =",
+#                                                          number_of_SNPs,
+#                                                          ")",
+#                                                          sep = ""),
+#                                            size = 3) +
+                                  theme_classic() +
+                                  theme(axis.text.x = element_text(size = 7,
+                                                                   angle = 45,
+                                                                   hjust = 1),
+                                        
+                                        legend.position = "none",
+                                        panel.border = element_rect(colour = "black",
+                                                                    fill = NA,
+                                                                    size = 0.5),
+                                        panel.background = element_rect(fill = "transparent")) +
+                                  xlab(paste("bp in", sig_contig_list_short[position])) +
+                                  ylab("Most common allele freq") +
+                                  ylim(0, 1) 
+  
+}
+
+
+
+```
+
+```{r print 10 plots, eval = TRUE, echo = FALSE, warning = FALSE}
+# print 10 plots on rows
+do.call(grid.arrange, c(make_plot[1:2], 
+                        nrow = 2
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-1-2.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+do.call(grid.arrange, c(make_plot[3:4], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-3-4.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[5:6], 
+                        nrow = 2
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-5-6.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+
+do.call(grid.arrange, c(make_plot[7:8], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-7-8.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[9:10], 
+                        nrow = 2 
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-9-10.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+
+
+```
+
+```{r print plots 11 - 20, eval = TRUE, echo = FALSE, warning = FALSE}
+# print 10 plots on rows
+do.call(grid.arrange, c(make_plot[11:12], 
+                        nrow = 2
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-11-12.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+do.call(grid.arrange, c(make_plot[13:14], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-13-14.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[15:16], 
+                        nrow = 2
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-15-16.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+
+do.call(grid.arrange, c(make_plot[17:18], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-17-18.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[19:20], 
+                        nrow = 2 
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-19-20.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+
+
+```
+
+```{r print plots 21 - 30, eval = TRUE, echo = FALSE, warning = FALSE}
+# print 10 plots on rows
+do.call(grid.arrange, c(make_plot[21:22], 
+                        nrow = 2
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-21-22.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+do.call(grid.arrange, c(make_plot[23:24], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-23-24.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[25:26], 
+                        nrow = 2
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-25-26.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+
+do.call(grid.arrange, c(make_plot[27:28], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-27-28.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[29:30], 
+                        nrow = 2 
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-29-30.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+
+
+```
+
+
+```{r print plots 31 - 40, eval = TRUE, echo = FALSE, warning = FALSE}
+# print 10 plots on rows
+do.call(grid.arrange, c(make_plot[31:32], 
+                        nrow = 2
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-31-32.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+do.call(grid.arrange, c(make_plot[33:34], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-33-34.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[35:36], 
+                        nrow = 2
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-35-36.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+
+do.call(grid.arrange, c(make_plot[37:38], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-37-38.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[39:40], 
+                        nrow = 2 
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-39-40.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+
+
+```
+
+```{r print plots 41 - 46, eval = TRUE, echo = FALSE, warning = FALSE}
+# print  plots on rows
+do.call(grid.arrange, c(make_plot[41:42], 
+                        nrow = 2
+                        )) %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-41-42.png",
+                                      width = 9,
+                                      height = 6,
+                                      dpi = 600)
+
+do.call(grid.arrange, c(make_plot[43:44], 
+                        nrow = 2 
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-43-44.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+do.call(grid.arrange, c(make_plot[45:46], 
+                        nrow = 2
+                        ))  %>% ggsave(filename = "suppl-fig-46-snps-allele-freq-lollipop-45-46.png",
+                                       width = 9,
+                                       height = 6,
+                                       dpi = 600)
+
+
+
+
+
+```
+
+
+
