@@ -1,6 +1,4 @@
 # Pheidole analysis scripts
-
-.
 ├── 01-long_reads_data_preparation
 │   ├── Phei2-Phei3-Phei4
 │   ├── Ppal15
@@ -20,10 +18,11 @@
 │   │   ├── 04-coding_non_coding_pyrenees
 │   │   └── 05-combining_analyses
 │   └── 04-simulation_test
-└── 07-species_identification
-    ├── 01-magic_blast
-    ├── 02-reduce_redundancy
-    └── 03-blast-top-mito-agst-ref
+├── 07-species_identification
+│   ├── 01-magic_blast
+│   ├── 02-reduce_redundancy
+│   └── 03-blast-top-mito-agst-ref
+└── 08-microsatellite_investigation
 
 # Organisation of directory and original source of code
 mkdir 01-long_reads_data_preparation
@@ -64,6 +63,18 @@ cp /data/home/btx077/2019-03-06-minion_flye_QC/WHATIDID.txt 03-quality_control_o
 cp /data/home/btx077/2019-03-06-minion_flye_QC/lookup_unirefs.sh 03-quality_control_of_assembly/.
 
 cp /data/home/btx077/2019-03-06-minion_flye_QC/phylum_from_NCBI_taxid.R 03-quality_control_of_assembly/.
+
+# copy scripts for mapping the RNAseq reads
+cp /data/home/btw586/2019-05-08-superscaffolding_with_rnaseq/results/2019-05-09-pheidole_E_bwa/commands.sh mapping-rna.sh
+
+cp /data/home/btw586/2019-05-08-superscaffolding_with_rnaseq/results/2019-05-09-pheidole_E_bwa/WHATIDID.SH mapping-rna-WHATIDID.sh
+
+# copy script for creating GFF
+cp /data/home/btw586/2019-05-08-superscaffolding_with_rnaseq/results/2019-05-09-pheidole_quick_annotation/WHATIDID.sh creating-GFF-WHATIDID.sh
+
+# copy scripts for scaffolding Pheidole assembly
+cp /data/home/btw586/2019-05-08-superscaffolding_with_rnaseq/results/2019-05-09-pheidole_E_agoutiscaffolding/WHATIDID.sh scaffolding-Pheidole-WHATIDID.sh
+
 
 
 ############################################
@@ -210,4 +221,9 @@ cp /data/home/btx077/2019-01-23-species-identification/result/2019-01-23-reduce_
 mkdir 07-species_identification/03-blast-top-mito-agst-ref
 
 cp /data/home/btx077/2019-01-23-species-identification/result/2019-02-01-blast-top-mito-agst-ref/WHATIDID.txt 07-species_identification/03-blast-top-mito-agst-ref/.
+
+############################################
+mkdir 08-microsatellite_investigation
+
+cp /data/home/btx077/2020-12-microsatellites/01-genotyping_colonies/06_stats/Pheidole_microsatellite_pca.Rmd .
 
