@@ -227,3 +227,24 @@ mkdir 08-microsatellite_investigation
 
 cp /data/home/btx077/2020-12-microsatellites/01-genotyping_colonies/06_stats/Pheidole_microsatellite_pca.Rmd .
 
+
+############################################
+mkdir 09-checking_absence_of_supergene
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/result/contig-start-end-length-blast.txt
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/2020-11-13-zero-coverage-investigation.txt .
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/make-zero-depth-P-bed.sh .
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/find-common-P-regions-zero-depth.sh .
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/make-non-zero-depth-M-bed.sh .
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/find-common-M-regions-non-zero-depth-short-mem.sh .
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/find-unique-M-regions.sh .
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/find-longest-unique-M-regions.sh .
+
+cp ../../2019-03-05-association_analysis_flye_assembly/result/2019-03-15-map_reads_to_minion_flye/2021-01-07-investigation-M-regions.Rmd .

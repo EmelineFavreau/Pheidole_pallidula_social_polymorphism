@@ -1,6 +1,5 @@
 # Pheidole_pallidula_social_polymorphism
 
-
 .
 ├── 01-long_reads_data_preparation
 │   ├── Phei2-Phei3-Phei4
@@ -21,7 +20,9 @@
 │   │   ├── 04-coding_non_coding_pyrenees
 │   │   └── 05-combining_analyses
 │   └── 04-simulation_test
-└── 07-species_identification
-    ├── 01-magic_blast
-    ├── 02-reduce_redundancy
-    └── 03-blast-top-mito-agst-ref
+├── 07-species_identification
+│   ├── 01-magic_blast
+│   ├── 02-reduce_redundancy
+│   └── 03-blast-top-mito-agst-ref
+├── 08-microsatellite_investigation
+└── 09-checking_absence_of_supergene
