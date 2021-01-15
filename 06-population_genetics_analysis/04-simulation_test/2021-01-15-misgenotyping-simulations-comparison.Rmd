@@ -1,0 +1,139 @@
+---
+title: "Comparing misgenotyping simulation levels"
+author: "Emeline Favreau"
+date: "09/01/2021"
+output:
+  html_document: default
+
+---
+
+### Copyright 2021 Emeline Favreau, Queen Mary University of London.
+
+
+### Objective of analysis
+Pheidole genome-wide association study is based on genotyped social types of ant colony (either single-queen or multiple-queen colonies). To understand the impact of misgenotyping (ie assigning the wrong social type to a sample), we calculated the number of significant SNPs if a proportion of samples was misgenotyped (5%, 10%,25% and 50%).
+Here we look at the proportion of real SNPs (out of 46 SNPs detected by the Pheidole GWAS) that is recovered during those misgenotyping simulations. The question is: what is the level of misgenotyping that is acceptable in our analysis?
+This is part of our investigation of the power of our analysis, to demonstrate that we designed our analysis to recover all true positives and discard the false positives.
+
+
+### Analysis steps:
+- Obtaining data
+
+
+
+
+```{r load all the libraries, eval = TRUE, echo = FALSE, include = FALSE}
+#install.packages("BiocManager")
+#BiocManager::install("topGO")
+#BiocManager::install("ALL")
+#BiocManager::install("hgu95av2.db")
+
+# get libraries
+basic_libraries <- c("ggplot2",
+                     "tidyverse",
+                     "readr")
+
+for (lib in basic_libraries) {
+        if (require(package = lib, character.only = TRUE)) {
+                print("Successful")
+        } else {
+                print("Installing")
+                install.packages(lib)
+                library(lib, character.only = TRUE )
+        }
+}
+
+
+```
+
+```{r import data, eval = TRUE, echo = FALSE, include = TRUE}
+# created on apocrita, after simulating a VCF with 
+# 10% wrongly-assigned genotypes
+# over 1000 simulations, 
+# the ratio of number of real SNP over simulated SNPs (significant)
+ratio_level_10_df <- read.csv("result/real_snps_proportion_in_simulated_sig_snps_10",
+                                       header = TRUE)
+
+# same with 5% misgenotyping
+ratio_level_5_df <- read.csv("result/2021-01_real_snps_proportion_in_simulated_sig_snps_5",
+                                       header = TRUE)
+
+# same with 25% misgenotyping
+ratio_level_25_df <- read.csv("result/2021-01_real_snps_proportion_in_simulated_sig_snps_25",
+                                       header = TRUE)
+
+# same with 50% misgenotyping
+ratio_level_50_df <- read.csv("result/2021-01_real_snps_proportion_in_simulated_sig_snps_50",
+                                       header = TRUE)
+
+
+```
+
+
+The real GWAS resulted in some significant SNPs. Do simulations result in significant SNPs? 
+Yes. Our misgenotyping analyses resulted in simulated significant SNPs, for instance in 999 times out of 1000 for a level of 5% misgenotpying.
+
+
+```{r comparing simulations, eval = TRUE, echo = FALSE, include = TRUE}
+# genotyping 10% includes 61 instances with no significant SNPs at all
+# summary(ratio_level_10_df$x) # 61/1000 NA
+# summary(ratio_level_5_df$x) #1/1000 NA
+# summary(ratio_level_25_df$x) # 301/1000 NA
+# summary(ratio_level_50_df$x) # 571/1000 NA
+
+data <- data.frame(
+  simulation_type = c("05% misgenotyped",
+           "10% misgenotyped",
+           "25% misgenotyped",
+           "50% misgenotyped") ,  
+  simulation_with_sig_snps = c(1000 - summary(ratio_level_5_df$x)[7],
+            1000 - summary(ratio_level_10_df$x)[7],
+            1000 - summary(ratio_level_25_df$x)[7],
+            1000 - summary(ratio_level_50_df$x)[7])
+  )
+
+# Basic bar plot
+ggplot(data = data, aes(simulation_type, simulation_with_sig_snps)) +
+  geom_bar(stat = "identity") + 
+  theme_classic() + 
+  ylab("Simulations with significant SNPs") +    
+  xlab("Simulation types") + 
+  ggtitle("high misgenotyping = less simulations with significant SNPs")
+
+
+```
+
+The next question is: do the simulated significant SNPs include real SNPs (ie on same contig position)?
+Yes. For low levels of misgenotyping (5-10%), the majority of the simulated significant SNPs are those real Pheidole SNPs.
+
+```{r comparing simulations for those Pheidole SNPs, eval = TRUE, echo = FALSE, include = TRUE}
+# box plot of all simulations
+all_simulations_df <- data.frame(c(ratio_level_5_df$x,
+                                      ratio_level_10_df$x,
+                                      ratio_level_25_df$x,
+                                      ratio_level_50_df$x),
+                                    c(rep("05% misgenotyped", times = 1000),
+                                      rep("10% misgenotyped", times = 1000),
+                                      rep("25% misgenotyped", times = 1000),
+                                      rep("50% misgenotyped", times = 1000)),
+                                 stringsAsFactors = FALSE)
+
+# name the columns
+colnames(all_simulations_df) <- c("SNP_proportion", "migenotyping_level")
+
+# NA presence means that there was no significant SNPs at all
+all_simulations_df$SNP_proportion[is.na(all_simulations_df$SNP_proportion)] <- 0
+
+# order the x axis by increasing level of misgenotyping
+all_simulations_df$migenotyping_level <- as.factor(x = all_simulations_df$migenotyping_level)
+# Basic box plot
+ggplot(data = all_simulations_df, aes(migenotyping_level, SNP_proportion)) +
+  geom_boxplot() + theme_classic() + ylab("Real SNPs/Simulated SNPs") +    # label for x axis
+  xlab("Simulation types") + ggtitle("high misgenotyping = no real SNP recovered")
+
+
+```
+
+Conclusion
+
+Assuming that our analysis contains up to 10% of misgenotyping, the analysis design (GWAS using Fisher's exact test and Bonferroni adjustement) is expected to recover at least 50% of true positive significant SNPs.
