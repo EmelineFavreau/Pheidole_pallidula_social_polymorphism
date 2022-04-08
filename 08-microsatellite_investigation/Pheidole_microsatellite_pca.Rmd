@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r import all the data , eval = TRUE, echo = FALSE, include = FALSE}
 # import coverage for monogynous - this takes few minutes
-all_colonies_microsatellites <- read.csv("../05-genotype_tables/all_colonies_genotype.csv")
+all_colonies_microsatellites <- read.csv("../data/all_colonies_genotype.csv")
 
 
 # load all the libraries
@@ -29,7 +29,6 @@ for (lib in basic_libraries) {
 ```
 
 We genotyped 115 colonies for number of queens. We want to investigate if there is any outlier in our data.
-I follow the basic tutorial from Adegenet.
 
 
 ```{r test, eval = TRUE, echo = FALSE, warning = FALSE, width = 20, height = 5}
