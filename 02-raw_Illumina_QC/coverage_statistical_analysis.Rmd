@@ -1,0 +1,133 @@
+---
+title: "Pheidole read coverage by social type"
+author: "Emeline Favreau"
+date: "05/06/2019"
+output: pdf_document
+---
+
+I investigate the differences between social type (monogynous, polygynous) for raw read coverage.
+
+```{r setup, include = FALSE}
+#knitr::opts_chunk$set(echo = TRUE, fig.width = 10, fig.height = 8)
+```
+
+
+
+```{r import files and load libraries, include = FALSE}
+# import raw sequence coverage
+raw_sequence_coverage <- read.csv("115_pheidole_coverage.txt", header = FALSE, sep = 
+"\t", stringsAsFactors = FALSE)
+
+# import metadata
+metadata_df <- read.csv("../data/S2_pheidole_pop_paper.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE)
+
+# get and/or load all the libraries
+basic_libraries <- c("ggplot2", "tidyr")
+for (lib in basic_libraries) {
+        if (require(package = lib, character.only = TRUE)) {
+                print("Successful")
+        } else {
+                print("Installing")
+                install.packages(lib)
+                library(lib, character.only = TRUE )
+        }
+}
+```
+
+## Sample coverage by the raw reads
+
+Here I investigate if there is a difference of coverage by raw sequences between samples of monogynous origin and polygynous origin.
+
+
+
+
+```{r raw sequences coverage, eval = TRUE, echo = FALSE, warning = FALSE}
+## Step 1: tidy input dataframe
+# name columns
+colnames(raw_sequence_coverage) <- c("sample_name", "sequence_count")
+
+# update name of samples 
+# I27-P, A56-M, andrea-P, muna-P
+raw_sequence_coverage$sample_name <- gsub(pattern = "I27\\-N.*",    x = raw_sequence_coverage$sample_name, replacement = "I27-P_R1_001")
+raw_sequence_coverage$sample_name <- gsub(pattern = "A56\\-N.*",    x = raw_sequence_coverage$sample_name, replacement = "A56-M_R1_001")
+raw_sequence_coverage$sample_name <- gsub(pattern = "andrea\\-N.*", x = raw_sequence_coverage$sample_name, replacement = "andrea-P_R1_001")
+raw_sequence_coverage$sample_name <- gsub(pattern = "muna\\-N.*",   x = raw_sequence_coverage$sample_name, replacement = "muna-P_R1_001")
+
+# tidy the dataframe: the sequence count in second line equals the sequence count in first line
+for(position in seq(1, nrow(raw_sequence_coverage)-1, by = 2)){
+  # update the sequence count
+  raw_sequence_coverage[position, 2] <- raw_sequence_coverage[position+1, 2]
+}
+# remove the lines with "Total Sequences""
+raw_sequence_coverage_cleaned <- subset(raw_sequence_coverage, subset = sample_name != "Total Sequences")
+
+
+
+
+
+
+## Step 2: extract information for each sample 
+
+# make vector of colony names
+colony_name_vec <- unique(gsub(pattern = "\\_R.*", x = raw_sequence_coverage_cleaned$sample_name, replacement = ""))
+# make dataframe to gather information for each sample
+sequence_coverage_per_social <- as.data.frame(matrix(ncol = 3, nrow = length(colony_name_vec)))
+# name the columns
+colnames(sequence_coverage_per_social) <- c("sample_name", "total_sequence_count", "social")
+# add the colony names
+sequence_coverage_per_social$sample_name <- colony_name_vec
+# add the social type (M or P)
+sequence_coverage_per_social$social <- gsub(pattern = ".*\\-", x = sequence_coverage_per_social$sample_name, replacement = "")
+
+# looping through one sample at a time
+for(position in 1:length(colony_name_vec)){
+  # subset the raw df for this sample
+  # add the sum of sequence count for R1 and R2
+  sequence_coverage_per_social$total_sequence_count[sequence_coverage_per_social$sample_name == colony_name_vec[position]] <- sum(raw_sequence_coverage_cleaned$s
+equence_count[grep(pattern = colony_name_vec[position], x = raw_sequence_coverage_cleaned$sample_name)])
+}
+
+## Step 3: Are those distributions statistically different?
+# test of the equality of continuous probability distribution used to compare the two social groups
+# run a Kolmogorov-Smirnov test
+# a.k.a testing the shape of the distribution
+# The null hypothesis is that both groups were sampled from populations with identical distributions
+total_sequence_countM <- sequence_coverage_per_social$total_sequence_count[sequence_coverage_per_social$social== "M"]
+total_sequence_countP <- sequence_coverage_per_social$total_sequence_count[sequence_coverage_per_social$social== "P"]
+#ks.test(x = total_sequence_countM, y = total_sequence_countP)$p.value
+# 0.005581148 < 0.05, significant, the two distributions shapes are different
+#print(paste("KS test p =", ks.test(x = total_sequence_countM, y = total_sequence_countP)$p.value))
+# test of the null hypothesis that it is equally likely that a randomly selected value from one sample will be less than or greater than a randomly selected value from a second sample
+# run a Mann–Whitney U test (wilcoxon) test
+# testing if the medians are different (non-paramteric ttest)
+#wilcox.test(x = total_sequence_countM, y = total_sequence_countP)$p.value
+# 0.01008714 < 0.05, significant, the two distributions median are from different distributions
+
+
+
+# the outlier E115 (purple peak on the right) might affect the tests
+# # removing the outlier "E15-P" and running the test again
+# sequence_coverage_per_social_NoOutlier <- subset(sequence_coverage_per_social, subset = sample_name != "E15-P")
+# total_sequence_countM <- sequence_coverage_per_social_NoOutlier$total_sequence_count[sequence_coverage_per_social_NoOutlier$social== "M"]
+# total_sequence_countP <- sequence_coverage_per_social_NoOutlier$total_sequence_count[sequence_coverage_per_social_NoOutlier$social== "P"]
+# ks.test(x = total_sequence_countM, y = total_sequence_countP)$p.value
+# # 0.00413318 < 0.05, significant, the two distributions shapes are different
+# wilcox.test(x = total_sequence_countM, y = total_sequence_countP)$p.value
+# # 0.006575152 < 0.05, significant, the two distributions median are from different distributions
+
+
+## Step 4: plot the results
+plot_title    <- "Read coverage distribution by social type"
+plot_subtitle <- "Data from FastQC count of Total Sequences"
+x_title       <- "Sequence count"
+annotation_text <- paste("KS test p =", round(ks.test(x = total_sequence_countM, y = total_sequence_countP)$p.value, digits = 5),
+                         "\nWilcoxon test p =", round(wilcox.test(x = total_sequence_countM, y = total_sequence_countP)$p.value, digits = 5))
+ggplot(sequence_coverage_per_social, aes(x = total_sequence_count, fill = social, colour = social)) +
+   geom_density(alpha = 0.5) +
+   labs(title = plot_title, subtitle = plot_subtitle, x = x_title) +
+   # Monogynous orange f, Polygynous purple 9
+   scale_fill_manual(values   = c("#f1a340", "#998ec3")) +
+   scale_colour_manual(values = c("#f1a340", "#998ec3")) +
+   theme_classic() +
+   annotate("text", x = 50000000, y = 0.00000007, label = annotation_text)
+```
