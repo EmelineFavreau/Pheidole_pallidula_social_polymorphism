@@ -1,0 +1,31 @@
+---
+title: "2019-02-11-minion_composition"
+author: "Emeline Favreau"
+date: "11/02/2019"
+output: pdf_document
+---
+
+```{r eval = TRUE, echo = FALSE}
+name_of_runs <- c("phei2", "phei3", "phei4", "ppal15", "ppal16", "ppal4")
+
+composition_summary <- matrix(NA, ncol = 4, nrow = length(name_of_runs))
+
+pheidole_genome_size <- 300000000
+
+for(position in 1:length(name_of_runs)){
+  the_file <- paste("result/", name_of_runs[position], "-composition", sep = "")
+  minion_run_comp <- read.csv(file = the_file, sep = "\t", header = FALSE)
+  colnames(minion_run_comp) <- c("chr", "length", "#A", "#C", "#G", "#T", "#2", "#3", "#4", "#CpG", "#tv", "#ts", "#CpG-ts")
+  # in bp the total sequencing yield
+  total_sequencing_yield <- sum(as.numeric(minion_run_comp$length))
+  # the average is 4611
+  the_average <- summary(minion_run_comp$length)[4]
+  # the genome coverage
+  the_coverage <- total_sequencing_yield / pheidole_genome_size
+  composition_summary[position, ] <- c(name_of_runs[position], the_coverage, total_sequencing_yield, the_average)
+
+}
+colnames(composition_summary) <- c("run_name", "genome_coverage", "total_yield_in_bp", "average_length_in_bp")
+write.table(composition_summary, file = "result/composition_summary", quote = FALSE, row.names = FALSE, sep = " ")
+```
+
