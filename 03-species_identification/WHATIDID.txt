@@ -1,0 +1,31 @@
+##########################################################
+# step 1: obtain COX1 sequences from the BOLD database 
+# http://v3.boldsystems.org/index.php/Taxbrowser_Taxonpage?taxid=2041
+# obtain NCBI Pheidole mitochondrial sequence
+# https://www.ncbi.nlm.nih.gov/nuccore/EF518381.1?report=fasta
+
+##########################################################
+# Step 2: reduce redundancy by running CD-Hit to collapse redundant sequences 
+
+# run the command to obtain a fasta file of representative sequences
+# some sequences that are highly similar will be removed from the output
+# sequence identity threshold 97
+#  word size 10 (as per manual input)
+# length of description in .clstr file set to 0, it takes the fasta defline and stops at first space
+# memory limit 16000MB
+# number of threads 20
+~/bin/cd-hit-v4.6.8-2017-1208/cd-hit-est -i input/phei_fasta.fas -o result/pheidole 
+                                         -c 0.97 -n 10 -d 0 -M 16000 -T 20
+
+
+##########################################################
+# Step 3: run magic blast
+
+# make a variable with all sample names
+samples=`ls input/*.gz | cut -d '/' -f 2| cut -d '.' -f 1 | sort | uniq`
+
+# looping through samples
+while read -r sample; do
+# extract top matches = EF518381.1 = Pheidole pallidula?
+   ./run_magic_blast.sh input/reference input/${sample}.R1.fastq.gz input/${sample}.R2.fastq.gz
+done <<< "$samples"

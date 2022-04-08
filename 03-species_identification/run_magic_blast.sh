@@ -15,11 +15,6 @@
 ##
 #############################################################################
 
-## updated to work in my home (Emeline Favreau)
-# changelog: 
-# changed the path to magic blast
-# chnaged the way output is created to reflect my sample name structure
-
 
 ## Take input from the command line:
 reference=$1
@@ -39,14 +34,14 @@ if [ $# -eq 0 ]
 fi
 
 ## Generate index for blast databse:
-/data/home/btx077/bin/ncbi-magicblast-1.4.0/bin/makeblastdb \
+ncbi-magicblast-1.4.0/bin/makeblastdb \
 -in "$reference" -dbtype nucl -parse_seqids
 
 ## Print to console:
 echo 'Step One: Running magic-blast'
 
 ## Run magic-blast:
-/data/home/btx077/bin/ncbi-magicblast-1.4.0/bin/magicblast \
+ncbi-magicblast-1.4.0/bin/magicblast \
 -db "$reference" \
 -query "$input_forward" \
 -query_mate "$input_reverse" \
