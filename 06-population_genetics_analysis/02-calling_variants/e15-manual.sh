@@ -24,21 +24,3 @@ samtools markdup tmp2/E15-P.rg.sorted.fixmate.position.bam \
 samtools index -@ 24 tmp2/E15-P.rg.sorted.fixmate.position.markdup.bam \
                 tmp2/E15-P.rg.sorted.fixmate.position.markdup.bam.bai
 
-# Step 7: copy bam and bai in archive from tmp2
-rsync -avx --human-readable --progress tmp2/E15-P.rg.sorted.fixmate.position.markdup.bam.bai ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/.
-rsync -avx --human-readable --progress tmp/E15-P.rg.sorted.fixmate.position.markdup.bam ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/.
-
-# Step 8: soft links to result
-cd result
-
-ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/E15-P.rg.sorted.fixmate.position.markdup.bam.bai .
-
-ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/E15-P.rg.sorted.fixmate.position.markdup.bam .
-
-cd ..
-
-cd tmp
-
-ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/E15-P.rg.sorted.fixmate.position.markdup.bam.bai .
-
-ln -s ~/archive/2019-03-05-association_analysis_flye_assembly/2019-03-07-variant_calling/E15-P.rg.sorted.fixmate.position.markdup.bam .
