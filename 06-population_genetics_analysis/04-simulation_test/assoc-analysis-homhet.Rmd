@@ -1,19 +1,17 @@
 ---
-title: "Association analysis Pheidole + fake SNP homhet"
+title: "Association analysis Pheidole + fake SNP"
 author: "EmelineFavreau"
 date: "2 April 2019"
 output:
   pdf_document: default
 ---
 
-I tested each SNP for association with social type using logistic regression test implemented in plink, with PC1 and PC2 for covariates (related to longitude and latitude). 
-54,738 biallelic SNPs, in linkage equilibrium, supported by at least 75% of samples, on coding-only regions (loss of 80% of all SNPs by remooving non-coding contigs). 
-One of the SNPs is fake: monogynous samples are homozygote for alt, polygynous are heterozygote.
+I tested each SNP for association with social type using logistic regression test implemented in plink, with PC1 and PC2 for covariates (related to longitude and latitude). 54,738 biallelic SNPs, in linkage equilibrium, supported by at least 75% of samples, on coding-only regions (loss of 80% of all SNPs by remooving non-coding contigs). One of the SNPs is fake: monogynous samples are homozygote for alt, polygynous are heterozygote for ref.
 
 
 ```{r eval = TRUE, echo = FALSE, include = FALSE}
 # check the working directory
-basic_libraries <- c("qqman", "ggplot2")
+basic_libraries <- c("qqman", "ggplot2", "adegenet", "genetics", "pegas", "reshape2", "hierfstat")
 for (lib in basic_libraries) {
         if (require(package = lib, character.only = TRUE)) {
                 print("Successful")
@@ -31,7 +29,7 @@ for (lib in basic_libraries) {
 
 ```{r, eval = TRUE, echo = FALSE}
 # Evaluating raw p-value distribution from regression analysis
-plink_output <- read.csv("result/2019-04-02-flye-Pheidole-genic-fakesnp-homhet-LDpruned-maf0.05-snp-pvalues-nocovar.assoc.logistic.filtered", header = FALSE, sep = "")
+plink_output <- read.csv("result/2019-04-02-flye-Pheidole-genic-fakesnp-LDpruned-maf0.05-snp-pvalues.assoc.logistic.filtered", header = FALSE, sep = "")
 # head(plink_output)
 colnames(plink_output) <- c("CHR", "SNP", "BP", "A1", "TEST", "NMISS", "OR", "STAT", "P") 
 
@@ -89,7 +87,7 @@ if(sum(clean_snp_in_long_seq$adj_pvalue <= 0.05) == 0){
 } else {
   print(paste(sum(clean_snp_in_long_seq$adj_pvalue <= 0.05), "adjusted pvalues are lower than 0.05"))
 }
-# none
+# 2488 adjusted pvalues are lower than 0.05
 ```
 
 
@@ -119,7 +117,7 @@ colnames(scaff_length_df) <- c("scaffold_names", "scaffold_length")
 scaff_length_df$scaffold_names <- gsub(pattern = "Ppal_E.", x = scaff_length_df$scaffold_names, replacement = "")
 scaff_length_df$scaffold_names <- gsub(pattern = "$", x = scaff_length_df$scaffold_names, replacement = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon")
 # add a row for the fake contig and SNP
-scaff_length_df <- rbind(c("contig_01_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", "72141"),
+scaff_length_df <- rbind(c("contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", "72141"),
       scaff_length_df)
 scaff_length_df$scaffold_length <- as.numeric(scaff_length_df$scaffold_length)
 # order by number of SNPs
@@ -184,8 +182,8 @@ manhattan(manhattan_df_ten_ANDfake_longuest_contigs,
           p = "P",
           snp = "SNP", 
           suggestiveline = -log10(0.05), 
-          highlight = "contig_01_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
-          main = "Regression analysis: SNPs in linkage equilibrium in all populations \n for 10 longest scaffolds and fake green SNP homhet", xlab = "Scaffolds ordered by length")
+          highlight = "contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
+          main = "Regression analysis: \n SNPs in linkage equilibrium in all populations \n for 10 longest scaffolds and fake green SNP", xlab = "Scaffolds ordered by length")
 
 
 ```
@@ -203,7 +201,7 @@ Another way is to test the presence of the fake SNP with a simpler method: allel
 
 ```{r, eval = TRUE, echo = FALSE}
 # Evaluating raw p-value distribution from Fisher
-plink_output <- read.csv("result/2019-04-02-flye-Pheidole-genic-fakesnp-homhet.assoc.fisher", header = TRUE, sep = "")
+plink_output <- read.csv("result/2019-04-02-flye-Pheidole-genic-fakesnp.assoc.fisher", header = TRUE, sep = "")
 # head(plink_output)
 
 
@@ -300,7 +298,7 @@ colnames(scaff_length_df) <- c("scaffold_names", "scaffold_length")
 scaff_length_df$scaffold_names <- gsub(pattern = "Ppal_E.", x = scaff_length_df$scaffold_names, replacement = "")
 scaff_length_df$scaffold_names <- gsub(pattern = "$", x = scaff_length_df$scaffold_names, replacement = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon")
 # add a row for the fake contig and SNP
-scaff_length_df <- rbind(c("contig_01_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", "72141"),
+scaff_length_df <- rbind(c("contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", "72141"),
       scaff_length_df)
 scaff_length_df$scaffold_length <- as.numeric(scaff_length_df$scaffold_length)
 # order by number of SNPs
@@ -374,8 +372,8 @@ manhattan(manhattan_df_ten_ANDfake_longuest_contigs,
           snp = "SNP", 
           suggestiveline = -log10(0.05), 
           genomewideline = FALSE,
-          highlight = "contig_01_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
-          main = "Fisher: SNPs in linkage equilibrium in all populations \n for 10 longest scaffolds and fake green SNP", xlab = "Scaffolds ordered by length")
+          highlight = "contig_0_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:95A,G",
+          main = "Fisher: \n SNPs in linkage equilibrium in all populations \n for 10 longest scaffolds and fake green SNP", xlab = "Scaffolds ordered by length")
 
 
 ```
@@ -384,7 +382,7 @@ With a Fisher test, the fake SNP is differentiated.
 
 # Conclusion
 - Regression analysis does not isolate my fake SNP.
-- Fisher analysis does isolate my fake SNP (hom-het).
+- Fisher analysis does isolate my fake SNP.
 - The differences between regression analysis and Fisher test are: 
     - population structure is taken in consideration only in regression, not in Fisher test
     - allele counting in Fisher, logistic regression in the other
