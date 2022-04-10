@@ -1,0 +1,231 @@
+---
+  title: "2021-01-15-Fig2-sausage"
+author: "EmelineFavreau"
+date: "15 January 2021"
+output:
+  html_document: default
+pdf_document: default
+---
+  # Introduction
+  
+  ### Data
+  109 diploid workers, each representative of one colony, from one of the following regions:
+  
+  - Bruniquel (France): 69 samples, 16 monogynous and 53 polygynous
+
+- Vigliano (Italy): 23 samples, 16 monogynous and 7 polygynous
+
+- Pyrenees: 16 samples, 5 monogynous and 11 polygynous
+
+Each sample has an estimated genome coverage of 6x.
+
+### Assembly
+The assembly was created from MinION sequencing of a mix of workers and males from 2 monogynous colonies from France and Italy.
+Ppal_gnE assembly is 287 Mb long, with an N50 length of 452kb and near-complete set of single-copy orthologous genes (C:98.8%[S:98.1%,D:0.7%],F:0.4%,M:0.8%,n:1658). 
+There are 2,555 contigs.
+
+### Variant Calling
+We performed a reference-based variant calling using PPal_gnE and 115 sets of Illumina raw reads. 
+We first mapped raw reads of each sample to the assembly using Bowtie2 version 2.3.4 (local alignment), obtaining 115 BAM files with alignments private to each sample.
+We then used FreeBayes version 1.2.0 (--use-best-n-alleles 2) to call the variants, obtaining one vcf file. 
+We filtered the variant file with Bcftools 1.8, Tabix 0.2.5 and VCFtools 0.1.15. 
+Briefly, we sorted and indexed the VCF file, we kept biallelic SNPs, with a minimum quality phred of 30 and minimum sample support of 75% (--remove-indels --minQ 30 --min-alleles 2 --max-alleles 2). 
+Six samples were removed from the analysis due to being outliers as seen on PCA plot. 
+For one analysis, we used BEDtools intersect to keep variants only in the coding regions. 
+We filtered out variants that were absent from at least one population (Bruniquel, Italy, Pyrenees).
+We filtered out variants that were monomorphic in any population (Bruniquel, Italy, Pyrenees).
+We did not remove SNPs in linkage disequilibrium.
+There are 121,786 SNPs.
+
+### Association Analysis
+We performed a Fisher test of allele count for each SNP between monogynous samples and polygynous samples.
+First for the whole dataset, and then for each of the two main populations (France and Italy).
+We adjusted the p-values for multiple comparisons (Benjamini & Hochberg).
+
+```{r load all the libraries, eval = TRUE, echo = FALSE, include = FALSE}
+# get libraries
+basic_libraries <- c("calibrate",
+                     "colorspace",
+                     "ggplot2",
+                     "ggrepel",
+                     "gridExtra",
+                     "harmonicmeanp",
+                     "hierfstat",
+                     "LDheatmap",
+                     "pegas",
+                     "PopGenome",
+                     "qqman",
+                     "RColorBrewer",
+                     "reshape2",
+                     "tidyverse",
+                     "viridis")
+
+for (lib in basic_libraries) {
+  if (require(package = lib, character.only = TRUE)) {
+    print("Successful")
+  } else {
+    print("Installing")
+    install.packages(lib)
+    library(lib, character.only = TRUE )
+  }
+}
+```
+
+```{r fig 2b contig coverage, eval = TRUE, echo = FALSE, include = TRUE}
+# file created in 2020-06-15-main-figures.Rmd
+# each contig has median-normalised read depth mean for each social type
+# calculated on 777,165 SNPs from Bruniquel VCF
+# each contig has read log2 fold change of read depth mean
+# each contig has also its length, and cumulative lentgh (ordered by the longest first)
+# bruniquel_contig_coverage_ordered <- read.table(2019-03-14-bruniquel-maf10percent/result/bruniquel_contig_coverage_ordered, header = TRUE)
+bruniquel_contig_coverage_ordered <- read.table("2019-03-14-bruniquel-maf10percent/result/bruniquel_contig_coverage_ordered", header = TRUE)
+
+#test <- head(bruniquel_contig_coverage_ordered)
+#test
+
+# we need to substract 1 to each end of following contig
+bruniquel_contig_coverage_ordered$ignore_col <- 1
+
+# make a startpos column for the cumulative bp of each contig
+#https://stackoverflow.com/questions/14689424/use-a-value-from-the-previous-row-in-an-r-data-table-calculation
+updated_bruniquel_contig_coverage_ordered <- mutate(bruniquel_contig_coverage_ordered, contig_start_pos = lag(contig_length_cum_sum) + ignore_col)
+updated_bruniquel_contig_coverage_ordered$contig_start_pos[1] <- 1
+
+# plot contigs
+d1 <- data.frame(startpos = updated_bruniquel_contig_coverage_ordered$contig_start_pos,
+                 endpos = updated_bruniquel_contig_coverage_ordered$contig_length_cum_sum,
+                 value = updated_bruniquel_contig_coverage_ordered$read_log2_fold_change)
+
+
+
+# plot log fold change for all contigs in Bruniquel coding regions.
+# the novel thing: each contig is a rectangle whose length represents its bp length
+
+# prepare the plot for MS figure 2b
+x_title       <- "Contig (ordered by decreasing length)"
+y_title       <- "Log2 fold change of read depth (P / M)"
+
+# http://sape.inf.usi.ch/quick-reference/ggplot2/geom_rect
+ggplot() + 
+  geom_rect(data = tail(d1, n = 50), 
+            mapping = aes(xmin = startpos,
+                          xmax = endpos, 
+                          ymin = value, 
+                          ymax = value + 0.01,
+                          fill = value)) +
+  scale_fill_continuous_diverging(palette = "Blue-Yellow 3")+
+  theme_classic() +
+  labs(x = x_title, y = y_title)  +
+  scale_x_discrete(expand = expand_scale(mult = c(0.01, 0.01), add = c(0.5, 0.5)))
+
+# save for MS
+# ggsave(filename = "figure2b_coverage_contig.png",
+#        bg = "transparent", width = 4,
+#        height = 4, dpi = 600)
+```
+
+```{r fig 2b better visualisation, eval = TRUE, echo = FALSE, include = TRUE}
+
+# import position of the 48 SNPs
+fortyeight_df <- 
+  read.table(file = "2019-03-08-109samples-maf10percent/sig-48-region-file",
+             header = FALSE)
+
+# name columns
+colnames(fortyeight_df) <- c("contig_long_name", "pos")
+
+# make a column with short name of contig
+fortyeight_df$contig <- gsub(x = fortyeight_df$contig_long_name,
+                           pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon",
+                           replacement = "")
+
+# change class
+updated_bruniquel_contig_coverage_ordered$contig <- 
+  as.character(updated_bruniquel_contig_coverage_ordered$contig)
+
+
+fortyeight_df$contig <- as.character(fortyeight_df$contig)
+
+
+
+# make a column for sig_assoc: the contigs with a significant SNPs have the label "significant" 
+updated_bruniquel_contig_coverage_ordered$association <- "non-significant"
+updated_bruniquel_contig_coverage_ordered$association[match(fortyeight_df$contig, updated_bruniquel_contig_coverage_ordered$contig)] <- "significant"
+
+
+# plot the read fold change
+x_title <- "Contig length (bp)"
+y_title <- "Log2 Read Fold Change"
+
+my_data <- updated_bruniquel_contig_coverage_ordered %>% 
+  filter(association == "significant")
+
+ggplot(updated_bruniquel_contig_coverage_ordered,
+       aes(x = contig_length,
+           y = read_log2_fold_change)) +
+  geom_point(color = "grey") +
+  # geom_point(aes(color = read_log2_fold_change)) +
+  #scale_colour_gradient(low = "white", high = "black") +
+   # scale_color_gradient2(midpoint = 0,
+   #                       low = "#4d9221",
+   #                       mid = "white",
+   #                       high = "#c51b7d",
+   #                       space = "Lab" ) +
+   # 
+  theme_bw() +
+  
+  geom_point(data = updated_bruniquel_contig_coverage_ordered[updated_bruniquel_contig_coverage_ordered$read_log2_fold_change > 0.25,],
+             color = "#f1a340",
+             fill = "#f1a340",
+             size = 1) +
+  
+  geom_point(data = updated_bruniquel_contig_coverage_ordered[updated_bruniquel_contig_coverage_ordered$read_log2_fold_change < -0.25,],
+             color = "#998ec3",
+             fill = "#998ec3",
+             size = 1) +
+  
+  geom_point(data = my_data,
+             color = "black",
+             fill = "black",
+             size = 1,
+             shape = 17) +
+  
+  #scale_shape_discrete(name = "GWAS result") +
+  
+  labs(x = x_title,
+       y = y_title) 
+  
+  
+  
+
+
+# save for MS
+ggsave(filename = "2021-12-02-figure2-read-fold-change.pdf",
+       bg = "transparent", width = 8,
+       height = 4, dpi = 600)
+```
+
+
+In our analysis, short contigs contain a disproportionate amount of reads from one social type, as shown by contigs with extreme log2 read fold change (negative enriched in multiple-queen reads, positive enriched in single-queen reads).
+
+```{r understanding scale, eval = TRUE, echo = FALSE, include = FALSE}
+
+# length of the bottom 3 contigs
+# contig_4631 5005  -1.004382 
+# contig_5306 969 -1.159895  
+# contig_3700 891 -1.617845
+sort(updated_bruniquel_contig_coverage_ordered$read_log2_fold_change)[1:4]
+
+updated_bruniquel_contig_coverage_ordered[updated_bruniquel_contig_coverage_ordered$read_log2_fold_change <= -0.8025783, ]
+
+# length of the top 3 contigs
+
+# contig_4557 3019 0.8632710
+# contig_5533 2859 0.8140594
+# contig_3996 5077 0.7064652
+sort(updated_bruniquel_contig_coverage_ordered$read_log2_fold_change, decreasing = TRUE)[1:4]
+
+updated_bruniquel_contig_coverage_ordered[updated_bruniquel_contig_coverage_ordered$read_log2_fold_change >= 0.7064652, ]
+
+
+```
