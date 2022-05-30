@@ -1,5 +1,5 @@
 ---
-  title: "2021-01-15-Fig2-sausage"
+  title: "2021-01-15-Fig2"
 author: "EmelineFavreau"
 date: "15 January 2021"
 output:
@@ -197,7 +197,9 @@ ggplot(updated_bruniquel_contig_coverage_ordered,
   
   
   
-
+# mean contig length when absolute read fold change is above 0.25 = 5213.145
+# median is 1986
+summary(updated_bruniquel_contig_coverage_ordered$contig_length[(updated_bruniquel_contig_coverage_ordered$read_log2_fold_change > 0.25) | (updated_bruniquel_contig_coverage_ordered$read_log2_fold_change < -0.25)])
 
 # save for MS
 ggsave(filename = "2021-12-02-figure2-read-fold-change.pdf",
