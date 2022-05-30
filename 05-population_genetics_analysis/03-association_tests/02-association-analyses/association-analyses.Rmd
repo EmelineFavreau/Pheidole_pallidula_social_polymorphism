@@ -734,82 +734,110 @@ ggsave(filename = "figure2c-sample-size-bar-plot.png", width = 8, height = 5, dp
 # 4. p-values at contig level between Bruniquel and Vigliano
 
 ```{r Figure 2e Bruniquel vs Italy contig plot of p-values, eval = FALSE, echo = FALSE}
+
 # make input
 # import output from Fisher Bruniquel
-plink_output_fisher_bruniquel <- read.csv("2019-04-03-coding-only-bruniquel-maf10percent/result/2019-04-03-flye-bruniquel-genic-noLD.assoc.fisher",
+plink_output_fisher_bruniquel <- read.csv("../coding-only-analyses/2019-04-03-coding-only-bruniquel-maf10percent/result/2019-04-03-flye-bruniquel-genic-noLD.assoc.fisher",
                                           header = TRUE,
                                           sep = "")
 
 # import output from Fisher
-plink_output_fisher_italy <- read.csv("2019-04-11-coding-only-italy-maf10percent/result/2019-04-11-flye-italy-genic.assoc.fisher",
+plink_output_fisher_italy <- read.csv("../coding-only-analyses/2019-04-11-coding-only-italy-maf10percent/result/2019-04-11-flye-italy-genic.assoc.fisher",
                                       header = TRUE,
                                       sep = "")
 
-# add columns needed
-plink_output_fisher_bruniquel$adj_pvalue <- p.adjust(plink_output_fisher_bruniquel$P, method = "BH")
+# add columns for FDR adjustment (20 SNPs in Bruni, 0 SNP in Italy)
+plink_output_fisher_bruniquel$adj_pvalue <- 
+  p.adjust(plink_output_fisher_bruniquel$P, method = "BH")
 
-plink_output_fisher_italy$adj_pvalue <- p.adjust(plink_output_fisher_italy$P, method = "BH")
+plink_output_fisher_italy$adj_pvalue <- 
+  p.adjust(plink_output_fisher_italy$P, method = "BH")
 
 # update class
-plink_output_fisher_bruniquel$SNP     <- as.character(plink_output_fisher_bruniquel$SNP)
+plink_output_fisher_bruniquel$SNP <- 
+  as.character(plink_output_fisher_bruniquel$SNP)
 
-plink_output_fisher_italy$SNP <- as.character(plink_output_fisher_italy$SNP)
+plink_output_fisher_italy$SNP <- 
+  as.character(plink_output_fisher_italy$SNP)
 
 # combine both dataframes: snp name | italian p-value | bruniquel p-value
-bruni_italy_fisher_output             <- merge(plink_output_fisher_bruniquel, plink_output_fisher_italy, by = "SNP")
+bruni_italy_fisher_output <- merge(plink_output_fisher_bruniquel,
+                                   plink_output_fisher_italy,
+                                   by = "SNP")
 
-# give colnames
-build_col <- gsub(x = colnames(bruni_italy_fisher_output), pattern = "x", replacement = "bruni")
-colnames(bruni_italy_fisher_output) <- gsub(x = build_col, pattern = "y", replacement = "ita")
+
+# give colnames (x becomes bruniquel, y becomes italy)
+build_col <- gsub(x = colnames(bruni_italy_fisher_output),
+                  pattern = "x",
+                  replacement = "bruni")
+
+colnames(bruni_italy_fisher_output) <- 
+  gsub(x = build_col, pattern = "y", replacement = "ita")
 
 
 
 # add a column to mark the significant SNPs for Bruniquel
-bruni_italy_fisher_output$signal <- ifelse(bruni_italy_fisher_output$adj_pvalue.bruni <= 0.05, "assoc", "random")
+bruni_italy_fisher_output$signal <- 
+  ifelse(bruni_italy_fisher_output$adj_pvalue.bruni <= 0.05,
+         "assoc", "random")
 
 # transform the data so that the smallest values are the largest (ie 0.05 becomes 1.30)
-bruni_italy_fisher_output$logP.bruni    <- -log10(bruni_italy_fisher_output$P.bruni)
-bruni_italy_fisher_output$logP.ita      <- -log10(bruni_italy_fisher_output$P.ita)
+bruni_italy_fisher_output$logP.bruni <- -log10(bruni_italy_fisher_output$P.bruni)
+bruni_italy_fisher_output$logP.ita   <- -log10(bruni_italy_fisher_output$P.ita)
 
+# update class
+bruni_italy_fisher_output$CHR.bruni <- 
+  as.character(bruni_italy_fisher_output$CHR.bruni)
 
-# Looking at the difference between higest p-values between the two populations, at the contig level
+# Looking at the difference between higest p-values between the two populations,
+# at the contig level
 # make a vec with contig names
 contig_names_vec <- unique(bruni_italy_fisher_output$CHR.bruni)
 
 # names of contigs with a significant SNP in Bruniquel
-sig_contigs <- bruni_italy_fisher_output[bruni_italy_fisher_output$signal == "assoc", ]
+sig_contigs <- 
+  bruni_italy_fisher_output[bruni_italy_fisher_output$signal == "assoc", ]
 
 # make a vector of those contigs
-sig_contigs <- sig_contigs$CHR
+sig_contigs <- sig_contigs$CHR.bruni
 
 # gather info at contig level in a matrix (empty for now)
-bruni_italy_fisher_output_contig_level <- matrix(NA, ncol = 4, nrow = length(contig_names_vec))
+bruni_italy_fisher_output_contig_level <- 
+  matrix(NA, ncol = 4, nrow = length(contig_names_vec))
 
 # gather info at contig level
 for(position in 1:length(contig_names_vec)){
     
     # subset info to one contig
     bruni_italy_fisher_output_onecontig <- subset(bruni_italy_fisher_output,
-                                                  subset = bruni_italy_fisher_output$CHR.bruni == contig_names_vec[position])
+    subset = bruni_italy_fisher_output$CHR.bruni == contig_names_vec[position])
     
     # select the lowest pvalue for each population
-    highest_log_bruni_P <- bruni_italy_fisher_output_onecontig$logP.bruni[which.max(bruni_italy_fisher_output_onecontig$logP.bruni)]
+    highest_log_bruni_P <- 
+      bruni_italy_fisher_output_onecontig$logP.bruni[which.max(bruni_italy_fisher_output_onecontig$logP.bruni)]
     
-    highest_log_italy_P <- bruni_italy_fisher_output_onecontig$logP.ita[which.max(bruni_italy_fisher_output_onecontig$logP.ita)]
+    highest_log_italy_P <- 
+      bruni_italy_fisher_output_onecontig$logP.ita[which.max(bruni_italy_fisher_output_onecontig$logP.ita)]
     
-    # select the signal type for the contig
+    # select the signal type for the contig 
     if(length(unique(bruni_italy_fisher_output_onecontig$signal)) > 1){
-      signal_type <- "assoc"
+      signal_type <- "assoc" # if assoc in one or the other population
     } else {
-      signal_type <- "random"
+      signal_type <- "random" # if random in both population
     }
 
     # keep relevant information for the contig-level plot
-    bruni_italy_fisher_output_contig_level[position, ] <- c(contig_names_vec[position], highest_log_bruni_P, highest_log_italy_P, signal_type)
+    bruni_italy_fisher_output_contig_level[position, ] <- 
+      c(contig_names_vec[position],
+        highest_log_bruni_P,
+        highest_log_italy_P,
+        signal_type)
 }
 
 # make into dataframe
-bruni_italy_fisher_output_contig_level <- as.data.frame(bruni_italy_fisher_output_contig_level)
+bruni_italy_fisher_output_contig_level <- 
+  as.data.frame(bruni_italy_fisher_output_contig_level, 
+                stringsAsFactors = FALSE)
 
 # name columns
 colnames(bruni_italy_fisher_output_contig_level) <- c("contig_name",
@@ -822,8 +850,35 @@ bruni_italy_fisher_output_contig_level$highest_log_bruni_P <- as.numeric(as.char
 
 bruni_italy_fisher_output_contig_level$highest_log_italy_P <- as.numeric(as.character(bruni_italy_fisher_output_contig_level$highest_log_italy_P))
 
+bruni_italy_fisher_output_contig_level$contig_name <-
+  as.character(bruni_italy_fisher_output_contig_level$contig_name)
+
+bruni_italy_fisher_output_contig_level$signal <-
+  as.character(bruni_italy_fisher_output_contig_level$signal)
+
 # make a short contig name
 bruni_italy_fisher_output_contig_level$short_contig_name <- gsub(x = bruni_italy_fisher_output_contig_level$contig_name, pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", replacement = "")
+
+# There are no contigs that are in the most significant 3rd deciles of both populations
+# anything above -log10 = 1.30103 is a P value lower than 0.05
+
+# highest contig in Bruniquel? contig_1213
+most_sig_contig_in_Bruni <- bruni_italy_fisher_output_contig_level$contig_name[which.max(bruni_italy_fisher_output_contig_level$highest_log_bruni_P)]
+
+# highest contig in Italy? contig_1081
+most_sig_contig_in_italy <- bruni_italy_fisher_output_contig_level$contig_name[which.max(bruni_italy_fisher_output_contig_level$highest_log_italy_P)]
+
+# rank of contig_1213 when Italy P value is ordered from more significant to less significant = 1311th
+# order is set to decreasing because it is -log10
+grep(x = bruni_italy_fisher_output_contig_level$contig_name[order(bruni_italy_fisher_output_contig_level$highest_log_italy_P, decreasing = TRUE)], pattern = most_sig_contig_in_Bruni)
+
+# rank of contig_1081 when Bruni P value is ordered from more significant to less significant = 578th
+grep(x = bruni_italy_fisher_output_contig_level$contig_name[order(bruni_italy_fisher_output_contig_level$highest_log_bruni_P, decreasing = TRUE)], pattern = most_sig_contig_in_italy)
+
+# contig_1081 is ranked the highest in both population dataset (1st in Italy, 578th in Bruniquel)
+# a decile contains 174.8 contigs, so this contig is in 4th decile
+578/(1748/10) # 3.306636
+
 
 
 # Calculating Pearson's product-moment correlation
@@ -834,8 +889,21 @@ bruni_italy_fisher_output_contig_level_pearson <- cor.test(bruni_italy_fisher_ou
          method = "pearson",
          conf.level = 0.95)
 
+#	Pearson's product-moment correlation
+# data:  bruni_italy_fisher_output_contig_level$highest_log_bruni_P and bruni_italy_fisher_output_contig_level$highest_log_italy_P
+# t = 20.651, df = 1746, p-value < 2.2e-16
+# alternative hypothesis: true correlation is not equal to 0
+# 95 percent confidence interval:
+#  0.4045849 0.4799794
+# sample estimates:
+#       cor 
+# 0.4430652 
+
 # estimated measure of association
 pearson_R <- paste("R =", round(bruni_italy_fisher_output_contig_level_pearson$estimate, digits = 3)) 
+
+
+
 
 # labelling should not overlap non-annotated points
 bruni_italy_fisher_output_contig_level$to_annotate <- bruni_italy_fisher_output_contig_level$short_contig_name
@@ -884,6 +952,8 @@ ggplot(data = bruni_italy_fisher_output_contig_level, aes(x = highest_log_bruni_
 
 # save for MS
 ggsave(filename = "figure2e.png", width = 8, height = 8, dpi = 600)
+
+
 ```
 
 
