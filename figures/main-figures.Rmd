@@ -1,0 +1,3041 @@
+---
+title: "2020-06-15-main-figures"
+author: "EmelineFavreau"
+date: "15 June 2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+# Introduction
+
+### Data
+109 diploid workers, each representative of one colony, from one of the following regions:
+
+ - Bruniquel (France): 69 samples, 16 monogynous and 53 polygynous
+
+ - Vigliano (Italy): 23 samples, 16 monogynous and 7 polygynous
+
+ - Pyrenees: 16 samples, 5 monogynous and 11 polygynous
+
+Each sample has an estimated genome coverage of 6x.
+
+### Assembly
+The assembly was created from MinION sequencing of a mix of workers and males from 2 monogynous colonies from France and Italy.
+Ppal_gnE assembly is 287 Mb long, with an N50 length of 452kb and near-complete set of single-copy orthologous genes (C:98.8%[S:98.1%,D:0.7%],F:0.4%,M:0.8%,n:1658). 
+There are 2,555 contigs.
+
+### Variant Calling
+We performed a reference-based variant calling using PPal_gnE and 115 sets of Illumina raw reads. 
+We first mapped raw reads of each sample to the assembly using Bowtie2 version 2.3.4 (local alignment), obtaining 115 BAM files with alignments private to each sample.
+We then used FreeBayes version 1.2.0 (--use-best-n-alleles 2) to call the variants, obtaining one vcf file. 
+We filtered the variant file with Bcftools 1.8, Tabix 0.2.5 and VCFtools 0.1.15. 
+Briefly, we sorted and indexed the VCF file, we kept biallelic SNPs, with a minimum quality phred of 30 and minimum sample support of 75% (--remove-indels --minQ 30 --min-alleles 2 --max-alleles 2). 
+Six samples were removed from the analysis due to being outliers as seen on PCA plot. 
+For one analysis, we used BEDtools intersect to keep variants only in the coding regions. 
+We filtered out variants that were absent from at least one population (Bruniquel, Italy, Pyrenees).
+We filtered out variants that were monomorphic in any population (Bruniquel, Italy, Pyrenees).
+We did not remove SNPs in linkage disequilibrium.
+There are 121,786 SNPs.
+
+### Association Analysis
+We performed a Fisher test of allele count for each SNP between monogynous samples and polygynous samples.
+First for the whole dataset, and then for each of the two main populations (France and Italy).
+We adjusted the p-values for multiple comparisons (Benjamini & Hochberg).
+
+```{r load all the libraries, eval = TRUE, echo = FALSE, include = FALSE}
+# get libraries
+basic_libraries <- c("calibrate",
+                     "colorspace",
+                     "ggplot2",
+                     "ggrepel",
+                     "gridExtra",
+                     "harmonicmeanp",
+                     "hierfstat",
+                     "LDheatmap",
+                     "pegas",
+                     "PopGenome",
+                     "qqman",
+                     "RColorBrewer",
+                     "reshape2",
+                     "tidyverse",
+                     "viridis")
+
+for (lib in basic_libraries) {
+        if (require(package = lib, character.only = TRUE)) {
+                print("Successful")
+        } else {
+                print("Installing")
+                install.packages(lib)
+                library(lib, character.only = TRUE )
+        }
+}
+```
+
+
+
+```{r import data for PCA plot, eval = TRUE, echo = FALSE, include = FALSE}
+# import the pca file
+pheidole.eigenvec <- read.table("2019-03-08-109samples-maf10percent/result/2020-06-15-NOmonomorphic-75support.eigenvec",
+                                header = TRUE)
+
+# import the PCA value
+pheidole.eigenval <- read.table("2019-03-08-109samples-maf10percent/result/2020-06-15-NOmonomorphic-75support.eigenval",
+                                header = FALSE)
+# import population and gyny info
+pop <- read.csv("2019-03-08-109samples-maf10percent/S2_pheidole_pop_paper.csv",
+                header = TRUE,
+                stringsAsFactors = FALSE)
+
+```
+
+
+```{r import data for man plot, eval = TRUE, echo = FALSE, include = FALSE}
+
+
+# import length of contig
+coding_non_coding_length <- read.csv("2019-03-08-109samples-maf10percent/Ppal_E-contig-length-clean",
+                                     header = FALSE,
+                                     sep = "\t")
+
+
+# import the sample list vec
+sample_list_vec <- read.table("2019-03-08-109samples-maf10percent/result/2019-08-12-thirteen-sig-sample_names.txt",
+                              header = FALSE)
+
+
+
+# import the fisher test for coding and non-coding regions 
+# removing SNPs without 75% sample support
+# and SNPs that are monomorphic in at least one population)
+# maf is 0.05
+plink_output_fisher_coding_non_coding75 <- read.csv("2019-03-08-109samples-maf10percent/result/2020-05-04-108samples-maf005-NOmonomorphic-75support.assoc.fisher", 
+                                                    header = TRUE,
+                                                    sep = "")
+
+# import output from Fisher (coding only)
+plink_output_fisher_coding_only   <- read.csv(file = "2019-04-26-coding-only-100support-109samples-maf10percent/result/2019-05-29-coding-only-100support.assoc.fisher",
+                                      header = TRUE,
+                                      sep = "")
+
+# import output from Fisher (repeat regions are removed)
+# removing SNPs without 75% sample support
+# and SNPs that are monomorphic in at least one population)
+# maf is 0.05
+plink_output_fisher_no_repeat_coding_non_coding75 <- read.csv("2019-03-08-109samples-maf10percent/result/2021-03-02-108samples-maf005-NOmonomorphic-75support.assoc.fisher", 
+                                                    header = TRUE,
+                                                    sep = "")
+
+
+```
+
+
+
+# 1. Figure 1A: PCA from all SNPs
+
+The PCA data come from plink PCA that takes the variance-standardised relationship matrix drawn from the VCF file.
+Looking through all PC axes up to 20, there is no split between monogynous and polygynous.
+
+```{r PCA plotting figure 1a, eval = TRUE, echo = FALSE}
+
+# update social forms
+pheidole.eigenvec$FID <- as.character(pheidole.eigenvec$FID)
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "A56-N"]    <- "A56-M"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "I27-N"]    <- "I27-P"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "andrea-N"] <- "andrea-P"
+pheidole.eigenvec$FID[pheidole.eigenvec$FID == "muna-N"]   <- "muna-P"
+
+# update column names
+colnames(pop) <- c("FID", "population", "gyny")
+colnames(pheidole.eigenval) <- "PC"
+
+# merge the two dataframes
+pca_df <- merge(x = pheidole.eigenvec, y = pop, intersect(names(pheidole.eigenvec), names(pop)))
+pca_df$population <- as.character(pca_df$population)
+
+# rename Spain - 2 samples
+pca_df$population[pca_df$population == "Spain"] <- "Pyrenees"
+
+# change gyny code for full word
+pca_df$gyny <- gsub(x = pca_df$gyny, pattern = "P", replacement = "Polygynous")
+pca_df$gyny <- gsub(x = pca_df$gyny, pattern = "M", replacement = "Monogynous")
+
+
+# plot PC1 and PC2
+x_title       <- paste("PC1 (", round(pheidole.eigenval$PC[1], 2), "%)", sep = "") 
+y_title       <- paste("PC2 (", round(pheidole.eigenval$PC[2], 2), "%)", sep = "") 
+
+ggplot(pca_df, aes(x = PC1, y = PC2, color = population, shape = gyny)) + 
+  geom_point(alpha = 0.8, size = 5) + 
+  # Bruniquel, Italy, Pyrenees
+  scale_color_manual(values = c("#66c2a5","#fc8d62","#8da0cb")) +
+  #scale_color_manual(values = c("#a6611a","#d01c8b","#80cdc1")) +
+  #geom_text(aes(x = -0.05, y = 0.08, label = "Bruniquel"), colour = "black") +
+  #geom_text(aes(x = 0, y = 0, label = "Pyrenees"), colour = "black") +
+  #geom_text(aes(x = 0.17, y = 0.1, label = "Italy"), colour = "black") +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.text.x =  element_text(size = 12),
+        axis.text.y =  element_text(size = 12))
+
+
+ggsave(filename = "figure1a_PC12.pdf", width = 4, height = 4, dpi = 600)
+
+
+
+# plot PC3 and PC4
+x_title       <- paste("PC3 (", round(pheidole.eigenval$PC[3], 2), "%)", sep = "") 
+y_title       <- paste("PC4 (", round(pheidole.eigenval$PC[4], 2), "%)", sep = "") 
+
+ggplot(pca_df, aes(x = PC3, y = PC4, color = population, shape = gyny)) + 
+  geom_point(alpha = 0.4, size = 5) + 
+  # Bruniquel, Italy, Pyrenees
+  scale_color_manual(values = c("#a6611a","#d01c8b","#80cdc1")) +
+  #geom_text(aes(x = -0.05, y = 0.08, label = "Bruniquel"), colour = "black") +
+  #geom_text(aes(x = 0, y = 0, label = "Pyrenees"), colour = "black") +
+  #geom_text(aes(x = 0.17, y = 0.1, label = "Italy"), colour = "black") +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.text.x =  element_text(size = 12),
+        axis.text.y =  element_text(size = 12))
+
+
+ggsave(filename = "figure1a_PC34.png", width = 4, height = 4, dpi = 600)
+
+
+# plot PC5 and PC6
+x_title       <- paste("PC5 (", round(pheidole.eigenval$PC[5], 2), "%)", sep = "") 
+y_title       <- paste("PC6 (", round(pheidole.eigenval$PC[6], 2), "%)", sep = "") 
+
+ggplot(pca_df, aes(x = PC5, y = PC6, color = population, shape = gyny)) + 
+  geom_point(alpha = 0.4, size = 5) + 
+  # Bruniquel, Italy, Pyrenees
+  scale_color_manual(values = c("#a6611a","#d01c8b","#80cdc1")) +
+  #geom_text(aes(x = -0.05, y = 0.08, label = "Bruniquel"), colour = "black") +
+  #geom_text(aes(x = 0, y = 0, label = "Pyrenees"), colour = "black") +
+  #geom_text(aes(x = 0.17, y = 0.1, label = "Italy"), colour = "black") +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.text.x =  element_text(size = 12),
+        axis.text.y =  element_text(size = 12))
+
+
+ggsave(filename = "figure1a_PC56.png", width = 4, height = 4, dpi = 600)
+
+# plot PC7 and PC8
+x_title       <- paste("PC7 (", round(pheidole.eigenval$PC[7], 2), "%)", sep = "") 
+y_title       <- paste("PC8 (", round(pheidole.eigenval$PC[8], 2), "%)", sep = "") 
+
+ggplot(pca_df, aes(x = PC7, y = PC8, color = population, shape = gyny)) + 
+  geom_point(alpha = 0.4, size = 5) + 
+  # Bruniquel, Italy, Pyrenees
+  scale_color_manual(values = c("#a6611a","#d01c8b","#80cdc1")) +
+  #geom_text(aes(x = -0.05, y = 0.08, label = "Bruniquel"), colour = "black") +
+  #geom_text(aes(x = 0, y = 0, label = "Pyrenees"), colour = "black") +
+  #geom_text(aes(x = 0.17, y = 0.1, label = "Italy"), colour = "black") +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.text.x =  element_text(size = 12),
+        axis.text.y =  element_text(size = 12))
+
+
+ggsave(filename = "figure1a_PC78.png", width = 4, height = 4, dpi = 600)
+
+# plot PC9 and PC10
+x_title       <- paste("PC9 (", round(pheidole.eigenval$PC[9], 2), "%)", sep = "") 
+y_title       <- paste("PC10 (", round(pheidole.eigenval$PC[10], 2), "%)", sep = "") 
+
+ggplot(pca_df, aes(x = PC9, y = PC10, color = population, shape = gyny)) + 
+  geom_point(alpha = 0.4, size = 5) + 
+  # Bruniquel, Italy, Pyrenees
+  scale_color_manual(values = c("#a6611a","#d01c8b","#80cdc1")) +
+  #geom_text(aes(x = -0.05, y = 0.08, label = "Bruniquel"), colour = "black") +
+  #geom_text(aes(x = 0, y = 0, label = "Pyrenees"), colour = "black") +
+  #geom_text(aes(x = 0.17, y = 0.1, label = "Italy"), colour = "black") +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.text.x =  element_text(size = 12),
+        axis.text.y =  element_text(size = 12))
+
+
+ggsave(filename = "figure1a_PC910.png", width = 4, height = 4, dpi = 600)
+
+# plot PC11 and PC12
+x_title       <- paste("PC11 (", round(pheidole.eigenval$PC[11], 2), "%)", sep = "") 
+y_title       <- paste("PC12 (", round(pheidole.eigenval$PC[12], 2), "%)", sep = "") 
+
+ggplot(pca_df, aes(x = PC11, y = PC12, color = population, shape = gyny)) + 
+  geom_point(alpha = 0.4, size = 5) + 
+  # Bruniquel, Italy, Pyrenees
+  scale_color_manual(values = c("#a6611a","#d01c8b","#80cdc1")) +
+  #geom_text(aes(x = -0.05, y = 0.08, label = "Bruniquel"), colour = "black") +
+  #geom_text(aes(x = 0, y = 0, label = "Pyrenees"), colour = "black") +
+  #geom_text(aes(x = 0.17, y = 0.1, label = "Italy"), colour = "black") +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.border = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent", colour = NA),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.title.x = element_text(size = 12),
+        axis.text.x =  element_text(size = 12),
+        axis.text.y =  element_text(size = 12))
+
+
+ggsave(filename = "figure1a_PC1112.png", width = 4, height = 4, dpi = 600)
+
+```
+
+
+# 2. Figure 1B: Manhattan plot from Fisher's exact tests
+
+
+```{r figure 1b man plot, eval = TRUE, echo = FALSE}
+# Here we test the association signal at the SNP level.
+# Here the code for 121,786 SNPs (75% sample support, polymorphic within a population)
+#head(plink_output_fisher_coding_non_coding75, 2)
+
+# adjust for multiple comparisons
+plink_output_fisher_coding_non_coding75$adj_pvalue <- p.adjust(plink_output_fisher_coding_non_coding75$P, 
+                                                               method = "BH")
+# check the adjusted p-values
+#summary(plink_output_fisher_coding_non_coding75$adj_pvalue)
+
+# save the name of sig SNPs for BLAST
+sig_949_snp_vec <- plink_output_fisher_coding_non_coding75$SNP[plink_output_fisher_coding_non_coding75$adj_pvalue < 0.05]
+sig_949_snp_contig_vec <- unique(plink_output_fisher_coding_non_coding75$CHR[plink_output_fisher_coding_non_coding75$adj_pvalue < 0.05])
+
+# 949 SNPs in 423 contigs, names saved for BLAST
+write.table(x = sig_949_snp_vec,
+            file = "2019-03-08-109samples-maf10percent/sig_949_snp_vec",
+            quote = FALSE)
+
+# 949 SNPs are significant
+#length(plink_output_fisher_coding_non_coding75$adj_pvalue[plink_output_fisher_coding_non_coding75$adj_pvalue < 0.05])
+
+# Manhattan plot for 121,786 SNPs, including 949 significant.
+# Here we plot the values of the association test 
+# change class
+plink_output_fisher_coding_non_coding75$CHR <- as.character(plink_output_fisher_coding_non_coding75$CHR)
+plink_output_fisher_coding_non_coding75$SNP <- as.character(plink_output_fisher_coding_non_coding75$SNP)
+colnames(coding_non_coding_length) <- c("CHR", "contig_length")
+
+# create 1 new column for contig length (ordering x axis by decreasing contig length)
+plink_output_fisher_coding_non_coding75$contig_length <- coding_non_coding_length$contig_length[match(plink_output_fisher_coding_non_coding75$CHR, coding_non_coding_length$CHR)]
+
+# make a vector for coding and non-coding contigs
+coding_contig_vec <- as.character(unique(plink_output_fisher_coding_only$CHR))
+
+# add a column for coding status of contig
+plink_output_fisher_coding_non_coding75$contig_status <- ifelse(plink_output_fisher_coding_non_coding75$CHR %in% coding_contig_vec, "non_coding", "coding")
+
+# change name of SNP for MS
+plink_output_fisher_coding_non_coding75$SNP_short_name <- gsub(x = plink_output_fisher_coding_non_coding75$SNP,
+                                                               pattern = "_pilon.*",
+                                                               replacement = "")
+
+# highlight coding SNPs
+coding_snp_vec <- plink_output_fisher_coding_non_coding75$SNP_short_name[plink_output_fisher_coding_non_coding75$contig_status == "coding"]
+
+# # change name of SNP for MS
+# plink_output_fisher_coding_non_coding75$SNP_short_name <- gsub(x = plink_output_fisher_coding_non_coding75$SNP,
+#                                                pattern = "_pilon.*",
+#                                                replacement = "")
+
+
+# Manhattan - GGPLOT WAY
+
+# compute the cumulative position of SNP.
+gwasResults    <- plink_output_fisher_coding_non_coding75
+
+# 2555 contigs
+num_contig     <- length(unique(gwasResults$CHR))
+
+# 949 SNP have an adjusted p value lower than 0.05
+#snpsOfInterest <- gwasResults$SNP[gwasResults$adj_pvalue <= 0.05]
+
+# investigate the 13 SNPs from previous analysis (over 14,000+ SNPs)
+#snpsOfInterest <- sig_snp13_list$snp_names
+
+# reorder df by contig length (large to small)
+# needed for next steps (ordering the contigs in x axis)
+gwasResults1 <- gwasResults[order(gwasResults$contig_length,
+                                  gwasResults$CHR,
+                                  decreasing = TRUE), ] 
+
+
+# make a vector with concatenated information: NUMBER(ranging from 2555 to 5109)CHR
+# needed for next steps (ordering the contigs in x axis)
+contig_vec <- paste(num_contig:(num_contig + num_contig - 1),
+                    unique(gwasResults1$CHR),
+                    sep = "")
+
+
+
+# take our df by row, obtain the matching contig name (CHR) from our contig_vec (NUMBER_CHR)
+# the resulting NUMBER_CHR goes into a new column called ID_CHR
+# this takes some time
+gwasResults1$ID_CHR  <- unlist(apply(gwasResults1,
+                                     1,
+                                     function(fun_row) grep(pattern = fun_row["CHR"],
+                                                            x = contig_vec,
+                                                            value = TRUE)))
+
+# subset the 423 contigs that have some of the 949 sig snps
+sig_contig949_vec <- unique(plink_output_fisher_coding_non_coding75$CHR[plink_output_fisher_coding_non_coding75$adj_pvalue < 0.05])
+
+#snpsOfInterest <- sig_snp13_list$snp_names
+
+
+  
+# Prepare the dataset
+nonpolymorphic_75_man_df <- gwasResults1 %>% 
+  
+  # Compute chromosome size
+  # a tibble with a column name of contig and a column with the largest SNP position 
+  # (equivalent to the coded length of the contig)
+  # group_by order by numerical values: so 1000 is before 0800
+  group_by(ID_CHR) %>% 
+  
+  # calculate each length of the chromosome
+  dplyr::summarize(chr_len = max(BP)) %>% 
+  
+  # Calculate cumulative position of each chromosome
+  mutate(tot = cumsum(chr_len) - chr_len) %>%
+  #select(- chr_len) %>%
+  
+  # Add this info to the initial dataset
+  left_join(gwasResults1, ., by = c("ID_CHR" = "ID_CHR")) %>%
+  
+  # Add a cumulative position of each SNP
+  #arrange(ID_CHR, BP, .by_group = TRUE) %>%
+  arrange(ID_CHR, BP) %>%
+  mutate(BPcum = BP + tot) %>%
+
+  # Add highlight and annotation information
+  mutate(is_highlight = ifelse(SNP %in% snpsOfInterest, "yes", "no")) %>%
+  # -log10(0.05) = 1.30103
+  mutate(is_annotate  = ifelse(-log10(adj_pvalue) > -log10(0.05), "yes", "no")) 
+
+# give attractive names for SNPs
+nonpolymorphic_75_man_df$SNP_name <- gsub(x           = nonpolymorphic_75_man_df$SNP,
+                            pattern     = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon|([A-Z],[A-Z])",
+                            replacement = "")
+
+
+
+
+
+# among those sig contigs (with 949 sig SNPs), there are all sig contigs (with 13 sig SNPs)
+#sig_snp13_list$contig_name %in% sig_contig949_vec
+
+
+# Make the Manhattan plot
+ggplot(nonpolymorphic_75_man_df, aes(x = BPcum, y = -log10(adj_pvalue))) +
+    
+    # Show all points
+    geom_point(aes(color = as.factor(ID_CHR)), alpha = 0.4, size = 0.4) +
+    scale_color_manual(values = rep(c("black", "grey"), num_contig)) +
+    
+    # custom X axis:
+    scale_x_discrete(name = "Pheidole contigs", 
+                     # the left of the plot will have some space *0.01 unit and added 0.5 unit
+                     # same for the right of the plot
+                     expand = expansion(mult = c(0.005, 0.01), add = c(0.5, 0.5))) +
+    
+    # remove space between plot area and x axis
+    #scale_y_continuous(expand = c(0, 0), limits = c(0, 1.5)) +      
+    
+    # Add highlighted points
+    geom_point(data = subset(nonpolymorphic_75_man_df, is_highlight == "yes"), color = "orange", size = 0.5) +
+   
+    # add significance line
+    geom_hline(yintercept = 1.30103, color = "blue2", size = 0.25, linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      axis.text.x =  element_text(size = 15),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contigs") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "figure1b_manhattanplot_75_polymorphic.png", width = 9, height = 5, dpi = 600)
+
+#Significant SNPS are everywhere (above dashed significance line). The 13 significant SNPs (out of 14,597 SNPs, from our previous analysis) are still significant but they do not carry the strongest association signal.
+```
+
+```{r make a bed file for 949 snps, eval = TRUE, echo = FALSE}
+# create bed file of sig snps in a 1000bp regions
+
+# first colum of BED file is the contig name formatted
+bed_col1 <- paste("Ppal_E",
+                  gsub(x = sig_949_snp_vec,
+                       pattern = "_pilon.*",
+                       replacement = ""),
+                  sep = ".")
+
+# second column of BED is the start of the region 
+bed_col2 <- (as.numeric(gsub(x = sig_949_snp_vec,
+     pattern = ".*:|([A-Z],[A-Z])",
+     replacement = ""))) - 500
+
+bed_col2[bed_col2 < 0] <- 0
+
+# third column of BED is the end of the region 
+bed_col3 <- (as.numeric(gsub(x = sig_949_snp_vec,
+                             pattern = ".*:|([A-Z],[A-Z])",
+                             replacement = ""))) + 500
+
+# make a dataframe to save
+bed_file_949 <- as.data.frame(cbind(bed_col1, bed_col2, bed_col3)) 
+
+# save it for blast use
+write.table(x = bed_file_949,
+            file = "2019-03-08-109samples-maf10percent/2020-09-02-949-sig.BED",
+            quote = FALSE,
+            row.names = FALSE,
+            sep = "\t")
+
+```
+
+
+```{r Figure 2 Manhattan plot with Agouti stitching, eval = TRUE, echo = FALSE}
+# data import
+# AGOUTI stitching results
+# no header, up to several columns.
+# the first column is the agouti scaffold names
+agouti_results <- read.table("2019-04-26-coding-only-100support-109samples-maf10percent/agouti-scaf-linkage-groups",
+                             header = FALSE,
+                             sep = "\t", 
+                             col.names = c("agouti_scaffold", "flye_contig_1", "flye_contig_2", "flye_contig_3", "flye_contig_4"),
+                             fill = TRUE)
+
+#str(agouti_results)
+
+# add NA
+agouti_results_filled <- na_if(agouti_results, "")
+
+# change class
+cols <- 1:5
+# agouti_results_filled[, cols] %<>% lapply(function(x) as.character(x))
+agouti_results_filled$agouti_scaffold <- as.character(agouti_results_filled$agouti_scaffold)
+agouti_results_filled$flye_contig_1 <- as.character(agouti_results_filled$flye_contig_1)
+agouti_results_filled$flye_contig_2 <- as.character(agouti_results_filled$flye_contig_2)
+agouti_results_filled$flye_contig_3 <- as.character(agouti_results_filled$flye_contig_3)
+agouti_results_filled$flye_contig_4 <- as.character(agouti_results_filled$flye_contig_4)
+
+# data tidy for table: Ppal_E.contig | agouti.contig
+agouti_gather <- agouti_results_filled %>%
+  gather(key = "agouti_hit", value = flye_contig, flye_contig_1:flye_contig_4) %>%
+  filter(!is.na(flye_contig)) %>% 
+  select(-agouti_hit)
+
+# str(agouti_gather)
+# 318 agouti groups, made of two contigs
+
+# create shorter name
+agouti_gather$flye_contig_short_name <- gsub(x = agouti_gather$flye_contig,
+                                             pattern = "Ppal_E.",
+                                             replacement = "")
+# obtain length of those contigs
+agouti_gather$chr_len <- nonpolymorphic_75_man_df$chr_len[match(agouti_gather$flye_contig_short_name, nonpolymorphic_75_man_df$SNP_short_name)]
+
+# some contigs are not present in the manhattan plot, let's remove those
+# str(agouti_man) 245 agouti groups
+agouti_man <- agouti_gather %>% 
+  filter(!is.na(chr_len))
+
+# make a table with the agouti scaffold length decreasing
+agouti_length_rank <- agouti_man %>%
+  group_by(agouti_scaffold) %>%
+  dplyr::summarize(agouti_scaff_length = sum(chr_len, na.rm = TRUE)) %>% 
+  arrange(desc(agouti_scaff_length)) %>% 
+  add_column(agouti_scaff_rank = 1:132)
+
+# str(agouti_length_rank)
+
+
+
+# gather info about agouti scaffolds, their length and the ppal contigs 
+agouti_man_updated <- left_join(x = agouti_man,
+          y = agouti_length_rank,
+          by = "agouti_scaffold")
+
+
+
+# update contig_length in gwasresults
+gwasResults_agouti <- gwasResults
+
+gwasResults_agouti$agouti_adjusted_contig_length <- agouti_man_updated$agouti_scaff_length[match(gwasResults_agouti$SNP_short_name, agouti_man_updated$flye_contig_short_name)]
+
+gwasResults_agouti$agouti_adjusted_contig_length[is.na(gwasResults_agouti$agouti_adjusted_contig_length)] <- gwasResults_agouti$contig_length[is.na(gwasResults_agouti$agouti_adjusted_contig_length)]
+
+# add a AGOUTY_ID (useful to colour-code the dots on Manhattan)
+gwasResults_agouti$AGOUTY_ID <- agouti_man_updated$agouti_scaffold[match(gwasResults_agouti$SNP_short_name, agouti_man_updated$flye_contig_short_name)]
+
+gwasResults_agouti$AGOUTY_ID[is.na(gwasResults_agouti$AGOUTY_ID)] <- gwasResults_agouti$SNP_short_name[is.na(gwasResults_agouti$AGOUTY_ID)]
+  
+# checking 
+# gwasResults_agouti %>% filter(SNP_short_name == "contig_1441")
+# summary(gwasResults_agouti$agouti_adjusted_contig_length)
+# summary(gwasResults_agouti$contig_length)
+
+# number of scaffolds created by Agouti : 132
+#nrow(agouti_length_rank)
+
+# number of agouti scaffolds in manhattan plot 132
+# length(grep(x = unique(gwasResults_agouti$AGOUTY_ID),
+#             pattern = "agouti"))
+
+# number of non-agouti contigs in manhattan plot 2310
+# length(grep(x = unique(gwasResults_agouti$AGOUTY_ID),
+#             pattern = "agouti",
+#             invert = TRUE))
+
+# number of contigs in the previous manhattan (without the agouti improvement) 2555
+#length(unique(nonpolymorphic_75_man_df$CHR))
+
+# N50 without the agouti improvement: 410,592
+# https://gist.github.com/shujishigenobu/1858458
+len <- unique(nonpolymorphic_75_man_df$contig_length)
+len.sorted <- rev(sort(len))
+N50 <- len.sorted[cumsum(len.sorted) >= sum(len.sorted)*0.5][1]
+#N50
+
+# N50 with the agouti improvement:  492,890
+# len <- unique(nonpolymorphic_75_man_agouti_df$agouti_adjusted_contig_length)
+# len.sorted <- rev(sort(len))
+# N50 <- len.sorted[cumsum(len.sorted) >= sum(len.sorted)*0.5][1]
+# N50
+
+# reorder df by contig length (large to small)
+# needed for next steps (ordering the contigs in x axis)
+gwasResults1_agouti <- gwasResults_agouti[order(gwasResults_agouti$agouti_adjusted_contig_length,
+                                  gwasResults_agouti$CHR,
+                                  decreasing = TRUE), ] 
+
+
+# make a vector with concatenated information: NUMBER(ranging from 2555 to 5109)CHR
+# needed for next steps (ordering the contigs in x axis)
+contig_vec_agouti <- paste(num_contig:(num_contig + num_contig - 1),
+                    unique(gwasResults1_agouti$CHR),
+                    sep = "")
+
+
+
+# take our df by row, obtain the matching contig name (CHR) from our contig_vec (NUMBER_CHR)
+# the resulting NUMBER_CHR goes into a new column called ID_CHR (rank of decreasing length)
+# this takes some time
+gwasResults1_agouti$ID_CHR  <- unlist(apply(gwasResults1_agouti,
+                                     1,
+                                     function(fun_row) grep(pattern = fun_row["CHR"],
+                                                            x = contig_vec_agouti,
+                                                            value = TRUE)))
+
+
+# Prepare the dataset
+nonpolymorphic_75_man_agouti_df <- gwasResults1_agouti %>% 
+  
+  # Compute chromosome size
+  # a tibble with a column name of contig and a column with the largest SNP position 
+  # (equivalent to the coded length of the contig)
+  # group_by order by numerical values: so 1000 is before 0800
+  group_by(ID_CHR) %>% 
+  dplyr::summarise(chr_len = max(BP)) %>% 
+  
+  # Calculate cumulative position of each chromosome
+  mutate(tot = cumsum(chr_len) - chr_len) %>%
+  #select(- chr_len) %>%
+  
+  # Add this info to the initial dataset
+  left_join(gwasResults1_agouti, ., by = c("ID_CHR" = "ID_CHR")) %>%
+  
+  # Add a cumulative position of each SNP
+  arrange(ID_CHR, BP, .by_group = TRUE) %>%
+  mutate(BPcum = BP + tot) %>%
+
+  # Add highlight and annotation information
+  mutate(is_highlight = ifelse(SNP %in% snpsOfInterest, "yes", "no")) %>%
+  # -log10(0.05) = 1.30103
+  mutate(is_annotate  = ifelse(-log10(adj_pvalue) > -log10(0.05), "yes", "no")) 
+
+# give attractive names for SNPs
+nonpolymorphic_75_man_agouti_df$SNP_name <- gsub(x = nonpolymorphic_75_man_agouti_df$SNP,
+                            pattern     = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon|([A-Z],[A-Z])",
+                            replacement = "")
+
+#test <- slice(nonpolymorphic_75_man_agouti_df, 1:1000)
+
+# number of scaffolds (agouti scaffolds and non-agouti contigs)
+num_scaff <- length(unique(nonpolymorphic_75_man_agouti_df$AGOUTY_ID))
+
+# find the middle of each scaffold
+axisdf <- nonpolymorphic_75_man_agouti_df %>% 
+  group_by(AGOUTY_ID) %>%
+  dplyr::summarize(center = (max(BPcum) + min(BPcum)) / 2 )
+
+# sanity check
+# plot(x =nonpolymorphic_75_man_agouti_df$BPcum,
+#      y =nonpolymorphic_75_man_agouti_df$agouti_adjusted_contig_length ,
+#      type = "l")
+
+# ggplot default level is alphabetical - here we want by decreasing size length
+nonpolymorphic_75_man_agouti_df$AGOUTY_ID <- factor(nonpolymorphic_75_man_agouti_df$AGOUTY_ID, levels = unique(nonpolymorphic_75_man_agouti_df$AGOUTY_ID))
+
+# size of points depending on significance level
+nonpolymorphic_75_man_agouti_df$is_annotate <- factor(nonpolymorphic_75_man_agouti_df$is_annotate, levels = unique(nonpolymorphic_75_man_agouti_df$is_annotate))
+
+# 1 = not significant
+# 2 = significant
+nonpolymorphic_75_man_agouti_df$sig <- 1
+nonpolymorphic_75_man_agouti_df$sig[nonpolymorphic_75_man_agouti_df$is_annotate == "yes"] <- 2
+
+# Make the Manhattan plot, including 132 Agouti scaffolds and X contigs
+ggplot(nonpolymorphic_75_man_agouti_df, aes(x = BPcum,
+                                            y = -log10(adj_pvalue),
+                                            colour = as.factor(AGOUTY_ID))) +
+    
+    # Show all points
+    #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+    geom_point(alpha = 0.4, size = 0.4) +
+    #geom_point(alpha = 0.6, aes(size = sig)) +
+  
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+    #scale_size_continuous(range = c(0.4, 1)) +
+    
+    # custom X axis:
+    scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+    # add significance line
+    geom_hline(yintercept = 1.30103,
+               color = "blue2",
+               size = 0.25,
+               linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      # to explore specific contig add labels
+      axis.text.x =  element_text(size = 4, hjust = 1, angle = 45),
+      #axis.text.x =  element_blank(),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contigs (Agouti stitching)") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "figure2a_manhattanplot_75_agouti_polymorphic.png", width = 9, height = 5, dpi = 600)
+
+
+```
+
+```{r zoom in the potential peak Figure 2 Manhattan plot with Agouti stitching, eval = TRUE, echo = FALSE}
+# the 10th largest contig looks like a peak, so I'm zooming in
+# plot only scaffold contig_482
+scaffold_df <- filter(nonpolymorphic_75_man_agouti_df, SNP_short_name == "contig_482")
+
+# Make the Manhattan plot
+ggplot(scaffold_df, aes(x = BPcum,
+                                            y = -log10(adj_pvalue),
+                                            colour = as.factor(AGOUTY_ID))) +
+    
+    # Show all points
+    #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+    #geom_point(alpha = 0.4, size = 0.4) +
+    geom_point(alpha = 0.6, aes(size = sig)) +
+  
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+    scale_size_continuous(range = c(0.4, 1)) +
+    
+    # custom X axis:
+    scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+    # add significance line
+    geom_hline(yintercept = 1.30103,
+               color = "blue2",
+               size = 0.25,
+               linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      axis.text.x =  element_blank(),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contig_482") +
+    ylab("-log10(adjusted P)")
+    
+
+
+```
+
+```{r bonferroni adjustment, eval = TRUE, echo = FALSE}
+# run Bonferroni on manhattan (maybe Benjamini and Hochberg is too much)
+# Expectation: see a peak?
+
+# calculate adjustment with Bonferroni: 46 sig SNPs
+nonpolymorphic_75_man_agouti_df$P_adj_Bonf <- p.adjust(nonpolymorphic_75_man_agouti_df$P,
+                                                       method = "bonferroni")
+# explore effect of different adjustment
+summary(nonpolymorphic_75_man_agouti_df$P_adj_Bonf)
+length(nonpolymorphic_75_man_agouti_df$P_adj_Bonf[nonpolymorphic_75_man_agouti_df$P_adj_Bonf < 0.05])
+summary(nonpolymorphic_75_man_agouti_df$adj_pvalue)
+length(nonpolymorphic_75_man_agouti_df$adj_pvalue[nonpolymorphic_75_man_agouti_df$adj_pvalue < 0.05])
+
+# save the name of sig SNPs for BLAST
+sig_46_snp_vec <- nonpolymorphic_75_man_agouti_df$SNP[nonpolymorphic_75_man_agouti_df$P_adj_Bonf < 0.05]
+sig_46_snp_contig_vec <- unique(nonpolymorphic_75_man_agouti_df$CHR[nonpolymorphic_75_man_agouti_df$P_adj_Bonf < 0.05])
+
+# 46 SNPs in 42 contigs, names saved for BLAST
+write.table(x = sig_46_snp_vec,
+            file = "2019-03-08-109samples-maf10percent/sig_46_snp_vec",
+            quote = FALSE)
+
+# Make the Manhattan plot
+ggplot(nonpolymorphic_75_man_agouti_df, aes(x = BPcum,
+                                            y = -log10(P_adj_Bonf),
+                                            colour = as.factor(AGOUTY_ID))) +
+    
+    # Show all points
+    #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+    geom_point(size = 1) +
+    #geom_point(alpha = 0.6, aes(size = sig)) +
+  
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+    #scale_size_continuous(range = c(0.4, 1)) +
+    
+    # custom X axis:
+    scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+    # add significance line
+    geom_hline(yintercept = 1.30103,
+               color = "blue2",
+               size = 0.25,
+               linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black",
+                                        fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      # to explore specific contig add labels
+      #axis.text.x =  element_text(size = 4, hjust = 1, angle = 45),
+      axis.text.x =  element_blank(),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contigs (Agouti stitching)") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "figure2a_manhattanplot_75_agouti_polymorphic-Bonferroni.png",
+       width = 10, height = 5, dpi = 600)
+
+
+```
+
+
+```{r extra things for the meeting, eval = TRUE, echo = FALSE}
+###############################################################################
+# make a zoomed-in manhattan plot for suppl figures
+
+# split the SNPS in 5 equal groups: 24360
+nrow(nonpolymorphic_75_man_agouti_df)/5
+# Group1: 1:24360
+# Group2: 24361:48720
+# Group3: 48721:73080
+# Group4: 73081:97440
+# Group5: 97441:nrow(nonpolymorphic_75_man_agouti_df)
+
+# Make the Manhattan plot Group 1
+ggplot(nonpolymorphic_75_man_agouti_df[1:24360, ], aes(x = BPcum,
+                                            y = -log10(adj_pvalue),
+                                            colour = as.factor(AGOUTY_ID))) +
+    
+    # Show all points
+    #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+    #geom_point(alpha = 0.4, size = 0.4) +
+    geom_point(alpha = 0.6, aes(size = sig)) +
+  
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+    scale_size_continuous(range = c(0.4, 1)) +
+    
+    # custom X axis:
+    scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+    # add significance line
+    geom_hline(yintercept = 1.30103,
+               color = "blue2",
+               size = 0.25,
+               linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      # to explore specific contig add labels
+      axis.text.x =  element_text(size = 4, hjust = 1, angle = 45),
+      #axis.text.x =  element_blank(),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contigs (Agouti stitching)") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "suppl_figure_manhattanplot_75_agouti_polymorphic_group1.png", width = 9, height = 5, dpi = 600)
+
+
+
+
+
+
+# Group3: 48721:73080
+# Group4: 73081:97440
+# Group5: 97441:nrow(nonpolymorphic_75_man_agouti_df)
+
+# Make the Manhattan plot Group 2
+ggplot(nonpolymorphic_75_man_agouti_df[24361:48720, ], aes(x = BPcum,
+                                            y = -log10(adj_pvalue),
+                                            colour = as.factor(AGOUTY_ID))) +
+    
+    # Show all points
+    #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+    #geom_point(alpha = 0.4, size = 0.4) +
+    geom_point(alpha = 0.6, aes(size = sig)) +
+  
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+    scale_size_continuous(range = c(0.4, 1)) +
+    
+    # custom X axis:
+    scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+    # add significance line
+    geom_hline(yintercept = 1.30103,
+               color = "blue2",
+               size = 0.25,
+               linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      # to explore specific contig add labels
+      axis.text.x =  element_text(size = 4, hjust = 1, angle = 45),
+      #axis.text.x =  element_blank(),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contigs (Agouti stitching)") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "suppl_figure_manhattanplot_75_agouti_polymorphic_group2.png", width = 9, height = 5, dpi = 600)
+
+
+
+# Group4: 73081:97440
+# Group5: 97441:nrow(nonpolymorphic_75_man_agouti_df)
+
+# Make the Manhattan plot Group 3
+ggplot(nonpolymorphic_75_man_agouti_df[48721:73080, ], aes(x = BPcum,
+                                            y = -log10(adj_pvalue),
+                                            colour = as.factor(AGOUTY_ID))) +
+    
+    # Show all points
+    #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+    #geom_point(alpha = 0.4, size = 0.4) +
+    geom_point(alpha = 0.6, aes(size = sig)) +
+  
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+    scale_size_continuous(range = c(0.4, 1)) +
+    
+    # custom X axis:
+    scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+    # add significance line
+    geom_hline(yintercept = 1.30103,
+               color = "blue2",
+               size = 0.25,
+               linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      # to explore specific contig add labels
+      axis.text.x =  element_text(size = 4, hjust = 1, angle = 45),
+      #axis.text.x =  element_blank(),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contigs (Agouti stitching)") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "suppl_figure_manhattanplot_75_agouti_polymorphic_group3.png", width = 9, height = 5, dpi = 600)
+
+
+ 
+# Group5: 97441:nrow(nonpolymorphic_75_man_agouti_df)
+
+# Make the Manhattan plot Group 4
+ggplot(nonpolymorphic_75_man_agouti_df[73081:97440, ], aes(x = BPcum,
+                                            y = -log10(adj_pvalue),
+                                            colour = as.factor(AGOUTY_ID))) +
+    
+    # Show all points
+    #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+    #geom_point(alpha = 0.4, size = 0.4) +
+    geom_point(alpha = 0.6, aes(size = sig)) +
+  
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+    scale_size_continuous(range = c(0.4, 1)) +
+    
+    # custom X axis:
+    scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+    # add significance line
+    geom_hline(yintercept = 1.30103,
+               color = "blue2",
+               size = 0.25,
+               linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      # to explore specific contig add labels
+      axis.text.x =  element_text(size = 4, hjust = 1, angle = 45),
+      #axis.text.x =  element_blank(),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contigs (Agouti stitching)") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "suppl_figure_manhattanplot_75_agouti_polymorphic_group4.png",
+       width = 9, height = 5, dpi = 600)
+
+
+ 
+# Group5: 
+
+# Make the Manhattan plot Group 5
+ggplot(nonpolymorphic_75_man_agouti_df[97441:nrow(nonpolymorphic_75_man_agouti_df), ],
+       aes(x = BPcum,
+                                            y = -log10(adj_pvalue),
+                                            colour = as.factor(AGOUTY_ID))) +
+    
+    # Show all points
+    #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+    #geom_point(alpha = 0.4, size = 0.4) +
+    geom_point(alpha = 0.6, aes(size = sig)) +
+  
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+    scale_size_continuous(range = c(0.4, 1)) +
+    
+    # custom X axis:
+    scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+    # add significance line
+    geom_hline(yintercept = 1.30103,
+               color = "blue2",
+               size = 0.25,
+               linetype = "dashed") +
+    
+    # Custom the theme:
+    theme_classic() +
+    theme(
+      legend.position    = "none",
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+      panel.background   = element_rect(fill = "white"),
+      axis.title.y = element_text(size = 15),
+      axis.title.x = element_text(size = 15),
+      # to explore specific contig add labels
+      axis.text.x =  element_text(size = 4, hjust = 1, angle = 45),
+      #axis.text.x =  element_blank(),
+      axis.text.y =  element_text(size = 15)) +
+    xlab("Pheidole contigs (Agouti stitching)") +
+    ylab("-log10(adjusted P)")
+    
+
+# save for MS
+ggsave(filename = "suppl_figure_manhattanplot_75_agouti_polymorphic_group5.png",
+       width = 9, height = 5, dpi = 600)
+###############################################################################
+# check FST in special scaffold
+
+
+###############################################################################
+# make a qplot
+```
+
+
+
+```{r man plot without repeat regions 48 snps, eval = TRUE, echo = FALSE}
+
+# Here we test the association signal at the SNP level.
+# Here the code for 117,568 SNPs (75% sample support, polymorphic within a population, repeat regions are removed)
+# head(plink_output_fisher_no_repeat_coding_non_coding75, 2)
+
+# adjust for multiple comparisons (Bonferonni)
+plink_output_fisher_no_repeat_coding_non_coding75$adj_pvalue <- 
+  p.adjust(plink_output_fisher_no_repeat_coding_non_coding75$P, 
+  method = "bonferroni")
+
+# check the adjusted p-values
+#summary(plink_output_fisher_no_repeat_coding_non_coding75$adj_pvalue)
+
+# 48 SNPs are significant
+#length(plink_output_fisher_no_repeat_coding_non_coding75$adj_pvalue[plink_output_fisher_no_repeat_coding_non_coding75$adj_pvalue < 0.05])
+
+# check location (for BED file and Figure 2)
+# plink_output_fisher_no_repeat_coding_non_coding75 %>% 
+#   filter(adj_pvalue < 0.05) %>% 
+#   select(CHR, BP)
+
+
+# Manhattan plot for 117,568 SNPs, including 48 significant.
+# Here we plot the values of the association test 
+# change class
+plink_output_fisher_no_repeat_coding_non_coding75$CHR <- 
+  as.character(plink_output_fisher_no_repeat_coding_non_coding75$CHR)
+
+plink_output_fisher_no_repeat_coding_non_coding75$SNP <- 
+  as.character(plink_output_fisher_no_repeat_coding_non_coding75$SNP)
+
+# name columns
+colnames(coding_non_coding_length) <- c("CHR", "contig_length")
+
+# create 1 new column for contig length (ordering x axis by decreasing contig length)
+plink_output_fisher_no_repeat_coding_non_coding75$contig_length <- 
+  coding_non_coding_length$contig_length[match(plink_output_fisher_no_repeat_coding_non_coding75$CHR,
+                                               coding_non_coding_length$CHR)]
+
+# make a vector for coding and non-coding contigs
+coding_contig_vec <- as.character(unique(plink_output_fisher_coding_only$CHR))
+
+# add a column for coding status of contig
+plink_output_fisher_no_repeat_coding_non_coding75$contig_status <- 
+  ifelse(plink_output_fisher_no_repeat_coding_non_coding75$CHR %in% 
+           coding_contig_vec, "non_coding", "coding")
+
+# change name of SNP for MS
+plink_output_fisher_no_repeat_coding_non_coding75$SNP_short_name <- 
+  gsub(x = plink_output_fisher_no_repeat_coding_non_coding75$SNP,
+       pattern = "_pilon.*",
+       replacement = "")
+
+# highlight coding SNPs
+coding_snp_vec <- plink_output_fisher_no_repeat_coding_non_coding75$SNP_short_name[plink_output_fisher_no_repeat_coding_non_coding75$contig_status == "coding"]
+
+
+
+# Manhattan plot- GGPLOT WAY
+
+# compute the cumulative position of SNP.
+gwasResults    <- plink_output_fisher_no_repeat_coding_non_coding75
+
+# 2514 contigs
+num_contig     <- length(unique(gwasResults$CHR))
+
+# reorder df by contig length (large to small)
+# needed for next steps (ordering the contigs in x axis)
+gwasResults1 <- gwasResults[order(gwasResults$contig_length,
+                                  gwasResults$CHR,
+                                  decreasing = TRUE), ] 
+
+
+# make a vector with concatenated information: NUMBER(ranging from 2555 to 5109)CHR
+# needed for next steps (ordering the contigs in x axis)
+contig_vec <- paste(num_contig:(num_contig + num_contig - 1),
+                    unique(gwasResults1$CHR),
+                    sep = "")
+
+
+
+# take our df by row, obtain the matching contig name (CHR) from our contig_vec (NUMBER_CHR)
+# the resulting NUMBER_CHR goes into a new column called ID_CHR
+# this takes some time
+gwasResults1$ID_CHR  <- unlist(apply(gwasResults1,
+                                     1,
+                                     function(fun_row) grep(pattern = fun_row["CHR"],
+                                                            x = contig_vec,
+                                                            value = TRUE)))
+
+# example:
+# ID_CHR is "3549contig_1210_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon"
+# contig is named 1210 from the assembly
+# 3549: rank of contig. the larger the rank, the smaller the contig
+# "2514contig_144_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon" includes the rank 2514, is smaller than 3549, thus contig 144 is larger than contig 1210
+
+
+# subset the 43 contigs that have some of the 48 sig snps
+sig_contig48_vec <- unique(plink_output_fisher_no_repeat_coding_non_coding75$CHR[plink_output_fisher_no_repeat_coding_non_coding75$adj_pvalue < 0.05])
+
+# Prepare the dataset
+nonpolymorphic_75_man_df_noRepeat <- gwasResults1 %>% 
+  
+  # Compute chromosome size
+  # a tibble with a column name of contig and a column with the largest SNP position 
+  # (equivalent to the coded length of the contig)
+  # group_by order by numerical values: so 1000 is before 0800
+  group_by(ID_CHR) %>% 
+  
+  # calculate each length of the chromosome
+  dplyr::summarize(chr_len = max(BP)) %>% 
+  
+  # Calculate cumulative position of each chromosome
+  mutate(tot = cumsum(chr_len) - chr_len) %>%
+  #select(- chr_len) %>%
+  
+  # Add this info to the initial dataset
+  left_join(gwasResults1, ., by = c("ID_CHR" = "ID_CHR")) %>%
+  
+  # Add a cumulative position of each SNP
+  #arrange(ID_CHR, BP, .by_group = TRUE) %>%
+  arrange(ID_CHR, BP) %>%
+  mutate(BPcum = BP + tot) %>%
+  
+  # Add highlight and annotation information
+  mutate(is_highlight = ifelse(SNP %in% snpsOfInterest, "yes", "no")) %>%
+  # -log10(0.05) = 1.30103
+  mutate(is_annotate  = ifelse(-log10(adj_pvalue) > -log10(0.05), "yes", "no")) 
+
+# give attractive names for SNPs
+nonpolymorphic_75_man_df_noRepeat$SNP_name <- gsub(x           = nonpolymorphic_75_man_df_noRepeat$SNP,
+                                          pattern     = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon|([A-Z],[A-Z])",
+                                          replacement = "")
+
+
+# data import
+# AGOUTI stitching results
+# no header, up to several columns.
+# the first column is the agouti scaffold names
+agouti_results <- read.table("2019-04-26-coding-only-100support-109samples-maf10percent/agouti-scaf-linkage-groups",
+                             header = FALSE,
+                             sep = "\t", 
+                             col.names = c("agouti_scaffold", "flye_contig_1", "flye_contig_2", "flye_contig_3", "flye_contig_4"),
+                             fill = TRUE)
+
+#str(agouti_results)
+
+# add NA
+agouti_results_filled <- na_if(agouti_results, "")
+
+# change class
+cols <- 1:5
+# agouti_results_filled[, cols] %<>% lapply(function(x) as.character(x))
+agouti_results_filled$agouti_scaffold <- as.character(agouti_results_filled$agouti_scaffold)
+agouti_results_filled$flye_contig_1 <- as.character(agouti_results_filled$flye_contig_1)
+agouti_results_filled$flye_contig_2 <- as.character(agouti_results_filled$flye_contig_2)
+agouti_results_filled$flye_contig_3 <- as.character(agouti_results_filled$flye_contig_3)
+agouti_results_filled$flye_contig_4 <- as.character(agouti_results_filled$flye_contig_4)
+
+# data tidy for table: Ppal_E.contig | agouti.contig
+agouti_gather <- agouti_results_filled %>%
+  gather(key = "agouti_hit", value = flye_contig, flye_contig_1:flye_contig_4) %>%
+  filter(!is.na(flye_contig)) %>% 
+  select(-agouti_hit)
+
+# str(agouti_gather)
+# 318 agouti groups, made of two contigs
+
+# create shorter name
+agouti_gather$flye_contig_short_name <- gsub(x = agouti_gather$flye_contig,
+                                             pattern = "Ppal_E.",
+                                             replacement = "")
+# obtain length of those contigs
+agouti_gather$chr_len <- 
+  nonpolymorphic_75_man_df_noRepeat$chr_len[match(agouti_gather$flye_contig_short_name,
+                              nonpolymorphic_75_man_df_noRepeat$SNP_short_name)]
+
+# some contigs are not present in the manhattan plot, let's remove those
+# str(agouti_man) 245 agouti groups
+agouti_man <- agouti_gather %>% 
+  filter(!is.na(chr_len))
+
+# make a table with the agouti scaffold length decreasing
+agouti_length_rank <- agouti_man %>%
+  group_by(agouti_scaffold) %>%
+  dplyr::summarize(agouti_scaff_length = sum(chr_len, na.rm = TRUE)) %>% 
+  arrange(desc(agouti_scaff_length)) %>% 
+  add_column(agouti_scaff_rank = 1:132)
+
+# str(agouti_length_rank)
+
+
+
+# gather info about agouti scaffolds, their length and the ppal contigs 
+agouti_man_updated <- left_join(x = agouti_man,
+                                y = agouti_length_rank,
+                                by = "agouti_scaffold")
+
+
+
+# update contig_length in gwasresults
+gwasResults_agouti <- gwasResults
+
+gwasResults_agouti$agouti_adjusted_contig_length <- 
+  agouti_man_updated$agouti_scaff_length[match(gwasResults_agouti$SNP_short_name,
+                                               agouti_man_updated$flye_contig_short_name)]
+
+gwasResults_agouti$agouti_adjusted_contig_length[is.na(gwasResults_agouti$agouti_adjusted_contig_length)] <- gwasResults_agouti$contig_length[is.na(gwasResults_agouti$agouti_adjusted_contig_length)]
+
+# add a AGOUTY_ID (useful to colour-code the dots on Manhattan)
+gwasResults_agouti$AGOUTY_ID <- agouti_man_updated$agouti_scaffold[match(gwasResults_agouti$SNP_short_name, agouti_man_updated$flye_contig_short_name)]
+
+gwasResults_agouti$AGOUTY_ID[is.na(gwasResults_agouti$AGOUTY_ID)] <- gwasResults_agouti$SNP_short_name[is.na(gwasResults_agouti$AGOUTY_ID)]
+
+# reorder df by contig length (large to small)
+# needed for next steps (ordering the contigs in x axis)
+gwasResults1_agouti <- gwasResults_agouti[order(gwasResults_agouti$agouti_adjusted_contig_length,
+                                                gwasResults_agouti$CHR,
+                                                decreasing = TRUE), ] 
+
+
+# make a vector with concatenated information: NUMBER(ranging from 2555 to 5109)CHR
+# needed for next steps (ordering the contigs in x axis)
+contig_vec_agouti <- paste(num_contig:(num_contig + num_contig - 1),
+                           unique(gwasResults1_agouti$CHR),
+                           sep = "")
+
+
+
+# take our df by row, obtain the matching contig name (CHR) from our contig_vec (NUMBER_CHR)
+# the resulting NUMBER_CHR goes into a new column called ID_CHR (rank of decreasing length)
+# this takes some time
+gwasResults1_agouti$ID_CHR  <- unlist(apply(gwasResults1_agouti,
+                                            1,
+                                            function(fun_row) grep(pattern = fun_row["CHR"],
+                                                                   x = contig_vec_agouti,
+                                                                   value = TRUE)))
+
+
+# Prepare the dataset
+nonpolymorphic_75_man_agouti_noRepeat_df <- gwasResults1_agouti %>% 
+  
+  # Compute chromosome size
+  # a tibble with a column name of contig and a column with the largest SNP position 
+  # (equivalent to the coded length of the contig)
+  # group_by order by numerical values: so 1000 is before 0800
+  group_by(ID_CHR) %>% 
+  dplyr::summarise(chr_len = max(BP)) %>% 
+  
+  # Calculate cumulative position of each chromosome
+  mutate(tot = cumsum(chr_len) - chr_len) %>%
+  #select(- chr_len) %>%
+  
+  # Add this info to the initial dataset
+  left_join(gwasResults1_agouti, ., by = c("ID_CHR" = "ID_CHR")) %>%
+  
+  # Add a cumulative position of each SNP
+  arrange(ID_CHR, BP, .by_group = TRUE) %>%
+  mutate(BPcum = BP + tot) %>%
+  
+  # Add highlight and annotation information
+  mutate(is_highlight = ifelse(SNP %in% snpsOfInterest, "yes", "no")) %>%
+  # -log10(0.05) = 1.30103
+  mutate(is_annotate  = ifelse(-log10(adj_pvalue) > -log10(0.05), "yes", "no")) 
+
+# give attractive names for SNPs
+nonpolymorphic_75_man_agouti_noRepeat_df$SNP_name <- gsub(x = nonpolymorphic_75_man_agouti_noRepeat_df$SNP,
+                                                 pattern     = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon|([A-Z],[A-Z])",
+                                                 replacement = "")
+
+#test <- slice(nonpolymorphic_75_man_agouti_noRepeat_df, 1:1000)
+
+# number of scaffolds (agouti scaffolds and non-agouti contigs)
+num_scaff <- length(unique(nonpolymorphic_75_man_agouti_noRepeat_df$AGOUTY_ID))
+
+# find the middle of each scaffold
+axisdf <- nonpolymorphic_75_man_agouti_noRepeat_df %>% 
+  group_by(AGOUTY_ID) %>%
+  dplyr::summarize(center = (max(BPcum) + min(BPcum)) / 2 )
+
+# sanity check
+# plot(x =nonpolymorphic_75_man_agouti_noRepeat_df$BPcum,
+#      y =nonpolymorphic_75_man_agouti_noRepeat_df$agouti_adjusted_contig_length ,
+#      type = "l")
+
+# ggplot default level is alphabetical - here we want by decreasing size length
+nonpolymorphic_75_man_agouti_noRepeat_df$AGOUTY_ID <- 
+  factor(nonpolymorphic_75_man_agouti_noRepeat_df$AGOUTY_ID,
+         levels = unique(nonpolymorphic_75_man_agouti_noRepeat_df$AGOUTY_ID))
+
+# size of points depending on significance level
+nonpolymorphic_75_man_agouti_noRepeat_df$is_annotate <- 
+  factor(nonpolymorphic_75_man_agouti_noRepeat_df$is_annotate,
+         levels = unique(nonpolymorphic_75_man_agouti_noRepeat_df$is_annotate))
+
+# 1 = not significant
+# 2 = significant
+nonpolymorphic_75_man_agouti_noRepeat_df$sig <- 1
+nonpolymorphic_75_man_agouti_noRepeat_df$sig[nonpolymorphic_75_man_agouti_noRepeat_df$is_annotate == "yes"] <- 2
+
+#save this table for future plots
+write.table(nonpolymorphic_75_man_agouti_noRepeat_df,
+            file = "nonpolymorphic_75_man_agouti_noRepeat_df",
+            row.names = FALSE,
+            quote = FALSE,
+            sep = "\t")
+
+# Make the Manhattan plot, including 132 Agouti scaffolds and X contigs
+ggplot(nonpolymorphic_75_man_agouti_noRepeat_df, aes(x = BPcum,
+                                            y = -log10(adj_pvalue),
+                                            colour = as.factor(AGOUTY_ID))) +
+  
+  # Show all points
+  #geom_point(aes(color = factor(AGOUTY_ID)), alpha = 0.4, size = 0.4) +
+  geom_point(alpha = 0.4, size = 0.4) +
+  #geom_point(alpha = 0.6, aes(size = sig)) +
+  
+  scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+  scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+  
+  #scale_size_continuous(range = c(0.4, 1)) +
+  
+  # custom X axis:
+  scale_x_continuous(label = axisdf$AGOUTY_ID, breaks = axisdf$center) +
+  
+  # add significance line
+  geom_hline(yintercept = 1.30103,
+             color = "blue2",
+             size = 0.25,
+             linetype = "dashed") +
+  
+  # Custom the theme:
+  theme_classic() +
+  theme(
+    legend.position    = "none",
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    panel.border       = element_rect(colour = "black", fill = NA, size = 0.5),
+    panel.background   = element_rect(fill = "white"),
+    axis.title.y = element_text(size = 15),
+    axis.title.x = element_text(size = 15),
+    # to explore specific contig add labels
+    axis.text.x =  element_text(size = 4, hjust = 1, angle = 45),
+    #axis.text.x =  element_blank(),
+    axis.text.y =  element_text(size = 15)) +
+  xlab("Pheidole contigs (Agouti stitching)") +
+  ylab("-log10(adjusted P)")
+
+
+# save for MS
+ggsave(filename = "figure2a_manhattanplot_75_agouti_polymorphic_noRepeat.pdf", 
+       width = 9, height = 5, dpi = 600)
+
+
+# Make a plot of the side view
+
+# color histogram bar by agouti
+# Colors
+colors <- c(rep("red",7), rep("blue",4), rep("orange",3))
+# a histogram with number of loci with same p value
+nonpolymorphic_75_man_agouti_noRepeat_df %>%
+  ggplot(aes(x = adj_pvalue)) +
+  scale_y_log10()+
+    geom_histogram(binwidth = 0.05) +
+  theme_bw()
+
+# save for MS
+ggsave(filename = "figure1d_histogram_75_agouti_polymorphic_noRepeat.pdf", 
+       width = 9, height = 5, dpi = 600)
+
+```
+
+
+# 3. Figure 2d: sample barplot
+
+```{r Figure 2 Bruniquel and Italy sample bar plot, eval = TRUE, echo = FALSE}
+# Bruniquel P 54
+# Bruniquel M 16
+# Italy M 17
+# Italy P 7
+location_list <- c("Bruniquel", "Bruniquel", "Vigliano","Vigliano")
+social_list <- c("polygynous", "monogynous", "polygynous", "monogynous")
+colony_counts <- c(54, 16, 7, 17)
+
+sampling_info_df <- data.frame(location_list, social_list, colony_counts) 
+
+ggplot(sampling_info_df, aes(
+                             fill = social_list,
+                             y = colony_counts,
+                             x = location_list)) + 
+    geom_bar(position = "dodge",
+             stat = "identity",
+             colour = "black") +
+    ggtitle("Sample size") +
+    scale_fill_manual(values = c("grey", "black")) +
+    theme_classic() +
+    xlab("") +
+    ylab("sample size") +
+    ggtitle(" ") +
+    theme(legend.title       = element_blank(),
+          axis.text.x        = element_text(size = 22),
+          axis.text.y        = element_text(size = 22),
+          axis.title.y       = element_text(size = 22)
+    )
+
+# save for MS
+ggsave(filename = "figure2c-sample-size-bar-plot.png", width = 8, height = 5, dpi = 300)
+
+```
+
+# 4. Figure 2e: p-values at contig level between Bruniquel and Vigliano
+
+```{r Figure 2e Bruniquel vs Italy contig plot of p-values, eval = FALSE, echo = FALSE}
+# make input
+# import output from Fisher Bruniquel
+plink_output_fisher_bruniquel <- read.csv("2019-04-03-coding-only-bruniquel-maf10percent/result/2019-04-03-flye-bruniquel-genic-noLD.assoc.fisher",
+                                          header = TRUE,
+                                          sep = "")
+
+# import output from Fisher
+plink_output_fisher_italy <- read.csv("2019-04-11-coding-only-italy-maf10percent/result/2019-04-11-flye-italy-genic.assoc.fisher",
+                                      header = TRUE,
+                                      sep = "")
+
+# add columns needed
+plink_output_fisher_bruniquel$adj_pvalue <- p.adjust(plink_output_fisher_bruniquel$P, method = "BH")
+
+plink_output_fisher_italy$adj_pvalue <- p.adjust(plink_output_fisher_italy$P, method = "BH")
+
+# update class
+plink_output_fisher_bruniquel$SNP     <- as.character(plink_output_fisher_bruniquel$SNP)
+
+plink_output_fisher_italy$SNP <- as.character(plink_output_fisher_italy$SNP)
+
+# combine both dataframes: snp name | italian p-value | bruniquel p-value
+bruni_italy_fisher_output             <- merge(plink_output_fisher_bruniquel, plink_output_fisher_italy, by = "SNP")
+
+# give colnames
+build_col <- gsub(x = colnames(bruni_italy_fisher_output), pattern = "x", replacement = "bruni")
+colnames(bruni_italy_fisher_output) <- gsub(x = build_col, pattern = "y", replacement = "ita")
+
+
+
+# add a column to mark the significant SNPs for Bruniquel
+bruni_italy_fisher_output$signal <- ifelse(bruni_italy_fisher_output$adj_pvalue.bruni <= 0.05, "assoc", "random")
+
+# transform the data so that the smallest values are the largest (ie 0.05 becomes 1.30)
+bruni_italy_fisher_output$logP.bruni    <- -log10(bruni_italy_fisher_output$P.bruni)
+bruni_italy_fisher_output$logP.ita      <- -log10(bruni_italy_fisher_output$P.ita)
+
+
+# Looking at the difference between higest p-values between the two populations, at the contig level
+# make a vec with contig names
+contig_names_vec <- unique(bruni_italy_fisher_output$CHR.bruni)
+
+# names of contigs with a significant SNP in Bruniquel
+sig_contigs <- bruni_italy_fisher_output[bruni_italy_fisher_output$signal == "assoc", ]
+
+# make a vector of those contigs
+sig_contigs <- sig_contigs$CHR
+
+# gather info at contig level in a matrix (empty for now)
+bruni_italy_fisher_output_contig_level <- matrix(NA, ncol = 4, nrow = length(contig_names_vec))
+
+# gather info at contig level
+for(position in 1:length(contig_names_vec)){
+    
+    # subset info to one contig
+    bruni_italy_fisher_output_onecontig <- subset(bruni_italy_fisher_output,
+                                                  subset = bruni_italy_fisher_output$CHR.bruni == contig_names_vec[position])
+    
+    # select the lowest pvalue for each population
+    highest_log_bruni_P <- bruni_italy_fisher_output_onecontig$logP.bruni[which.max(bruni_italy_fisher_output_onecontig$logP.bruni)]
+    
+    highest_log_italy_P <- bruni_italy_fisher_output_onecontig$logP.ita[which.max(bruni_italy_fisher_output_onecontig$logP.ita)]
+    
+    # select the signal type for the contig
+    if(length(unique(bruni_italy_fisher_output_onecontig$signal)) > 1){
+      signal_type <- "assoc"
+    } else {
+      signal_type <- "random"
+    }
+
+    # keep relevant information for the contig-level plot
+    bruni_italy_fisher_output_contig_level[position, ] <- c(contig_names_vec[position], highest_log_bruni_P, highest_log_italy_P, signal_type)
+}
+
+# make into dataframe
+bruni_italy_fisher_output_contig_level <- as.data.frame(bruni_italy_fisher_output_contig_level)
+
+# name columns
+colnames(bruni_italy_fisher_output_contig_level) <- c("contig_name",
+                                                      "highest_log_bruni_P",
+                                                      "highest_log_italy_P",
+                                                      "signal")
+
+# change to numeric
+bruni_italy_fisher_output_contig_level$highest_log_bruni_P <- as.numeric(as.character(bruni_italy_fisher_output_contig_level$highest_log_bruni_P))
+
+bruni_italy_fisher_output_contig_level$highest_log_italy_P <- as.numeric(as.character(bruni_italy_fisher_output_contig_level$highest_log_italy_P))
+
+# make a short contig name
+bruni_italy_fisher_output_contig_level$short_contig_name <- gsub(x = bruni_italy_fisher_output_contig_level$contig_name, pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", replacement = "")
+
+
+# Calculating Pearson's product-moment correlation
+# measure of strength of relationship
+# 0 = no linear relationship
+bruni_italy_fisher_output_contig_level_pearson <- cor.test(bruni_italy_fisher_output_contig_level$highest_log_bruni_P,
+         bruni_italy_fisher_output_contig_level$highest_log_italy_P,
+         method = "pearson",
+         conf.level = 0.95)
+
+# estimated measure of association
+pearson_R <- paste("R =", round(bruni_italy_fisher_output_contig_level_pearson$estimate, digits = 3)) 
+
+# labelling should not overlap non-annotated points
+bruni_italy_fisher_output_contig_level$to_annotate <- bruni_italy_fisher_output_contig_level$short_contig_name
+bruni_italy_fisher_output_contig_level$to_annotate[!bruni_italy_fisher_output_contig_level$signal %in% "assoc"] <- ""
+
+# prepare diagonal gradient
+bruni_italy_fisher_output_contig_level$colour_value <- bruni_italy_fisher_output_contig_level$highest_log_bruni_P - bruni_italy_fisher_output_contig_level$highest_log_italy_P
+
+# plot highlighting the significant SNPs in Bruniquel
+x_title       <- expression(paste("Bruniquel -log10(", italic("P"), ")"))
+y_title       <- expression(paste("Vigliano -log10(", italic("P"), ")"))
+
+# plot the contig-level correlation between Italy and Bruniquel
+ggplot(data = bruni_italy_fisher_output_contig_level, aes(x = highest_log_bruni_P, y = highest_log_italy_P)) +
+  
+  
+  
+  # set the points
+  geom_point(aes(alpha = 0.05,
+                 color = signal,
+                 fill  = signal,
+                 size  = highest_log_bruni_P * highest_log_italy_P),
+             shape = 21) +
+  
+  # fit colours black and green
+  scale_color_manual(values = c("black", "black")) +
+  scale_fill_manual(values = c("grey", "grey")) +
+  
+  # add trend line
+  geom_hline(yintercept = 4, linetype = "dashed", color = "grey") +
+  geom_vline(xintercept = 4, linetype = "dashed", color = "grey") +
+  
+  # set the frame and axis types
+  labs(x = x_title, y = y_title) +
+  theme_classic() +
+  ylim(0, 8) +
+  theme(axis.text.x        = element_text(size = 22),
+        axis.text.y        = element_text(size = 22),
+        axis.title.x       = element_text(size = 22),
+        axis.title.y       = element_text(size = 22),
+        legend.position  = "none",
+        panel.border     = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent"))
+
+
+
+# save for MS
+ggsave(filename = "figure2e.png", width = 8, height = 8, dpi = 600)
+
+
+# updated code from co-author reviews 
+# plot the contig-level correlation between Italy and Bruniquel
+ggplot(data = bruni_italy_fisher_output_contig_level, 
+       aes(x = highest_log_bruni_P, y = highest_log_italy_P)) +
+  
+  
+  # set the points
+  geom_point(aes(
+                 color = signal,
+                 fill  = signal,
+                 shape = signal),
+             shape = 21) +
+  
+  # fit colours black and green (#66c2a5)
+  scale_color_manual(values = c("#66c2a5", "grey")) +
+  scale_fill_manual(values = c("#66c2a5", "grey")) +
+  
+  # add trend line
+  geom_hline(yintercept = 4, linetype = "dashed", color = "grey") +
+  geom_vline(xintercept = 4, linetype = "dashed", color = "grey") +
+  
+  # set the frame and axis types
+  labs(x = x_title, y = y_title) +
+  theme_classic() +
+  ylim(0, 8) +
+  theme(axis.text.x        = element_text(size = 22),
+        axis.text.y        = element_text(size = 22),
+        axis.title.x       = element_text(size = 22),
+        axis.title.y       = element_text(size = 22),
+        legend.position  = "none",
+        panel.border     = element_rect(colour = "black", fill = NA, size = 0.5),
+        panel.background = element_rect(fill = "transparent"))
+
+
+
+# save for MS
+ggsave(filename = "2022-10-03-figure2f.png", width = 8, height = 8, dpi = 600)
+```
+
+
+# 5. Figure 2f: Sliding window FST in each population
+Current update (2022-02-3): the calculations are not traceable back to a given contig (contig-agnostic analysis).
+THe sliding window figure is confusing to Roddy.
+I am aiming to show one FST per contig, contigs ordered like the agouti manhattan
+```{r current 4 fst plots, eval = TRUE, echo = FALSE, include = TRUE}
+# Current update (2022-02-3): the calculations are not traceable back to a given contig (contig-agnostic analysis).
+# THe sliding window figure is confusing to Roddy.
+# I am aiming to show one FST per contig, contigs ordered like the agouti manhattan
+
+# input needed
+# 108 samples, all SNP
+# contig longest than 30kb
+contig_more30kb_length_FST <- 
+  read.delim("2019-03-08-109samples-maf10percent/contig_more30kb_length_FST",
+             header=FALSE, stringsAsFactors=FALSE)
+
+# name columns
+colnames(contig_more30kb_length_FST) <- c("contig",
+                                          "length",
+                                          "SNP",
+                                          "FST")
+
+# manhatthan input
+#  [1] "CHR"                           "SNP"                           "BP"                           
+#  [4] "A1"                            "F_A"                           "F_U"                          
+#  [7] "A2"                            "P"                             "OR"                           
+# [10] "adj_pvalue"                    "contig_length"                 "contig_status"                
+# [13] "SNP_short_name"                "agouti_adjusted_contig_length" "AGOUTY_ID"                    
+# [16] "ID_CHR"                        "chr_len"                       "tot"                          
+# [19] "BPcum"                         "is_highlight"                  "is_annotate"                  
+# [22] "SNP_name"                      "sig"                          
+nonpolymorphic_75_man_agouti_noRepeat_df <-
+  read.delim("~/Documents/local_apocrita/nonpolymorphic_75_man_agouti_noRepeat_df",
+             stringsAsFactors=FALSE)
+
+# add a column with manhattan order 
+# (AGOUTI stitching: the larger the rank is, the smaller the contig is)
+contig_more30kb_length_FST$ID_CHR <- 
+  nonpolymorphic_75_man_agouti_noRepeat_df$ID_CHR[match(contig_more30kb_length_FST$contig,
+      nonpolymorphic_75_man_agouti_noRepeat_df$CHR)]
+
+# ggplot default level is alphabetical - here we want by decreasing size length
+contig_more30kb_length_FST$AGOUTY_ID <- 
+  factor(contig_more30kb_length_FST$AGOUTY_ID,
+         levels = unique(contig_more30kb_length_FST$AGOUTY_ID))
+
+# make a x axis vector
+contig_more30kb_length_FST$BPcum <- 
+  nonpolymorphic_75_man_agouti_noRepeat_df$BPcum[match(contig_more30kb_length_FST$contig,
+    nonpolymorphic_75_man_agouti_noRepeat_df$CHR)]
+
+# add the p value
+contig_more30kb_length_FST$adj_pvalue <- nonpolymorphic_75_man_agouti_noRepeat_df$adj_pvalue[match(contig_more30kb_length_FST$contig,
+                                                                                                 nonpolymorphic_75_man_agouti_noRepeat_df$CHR)]
+
+ggplot(contig_more30kb_length_FST,
+       aes(x=adj_pvalue, y=FST)) + geom_point(size=0.3)  +theme_classic()
+
+
+```
+
+```{r former fst sliding window, eval = TRUE, echo = FALSE, include = TRUE}
+# input needed
+# phenotype file
+pheno <- read.csv("2019-03-08-109samples-maf10percent/pheno.txt",
+                  header = TRUE,
+                  sep = "\t",
+                  stringsAsFactors = FALSE)
+
+# population file
+pop <- read.csv("2019-03-08-109samples-maf10percent/S2_pheidole_pop_paper.csv",
+                  header = TRUE,
+                  sep = ",",
+                  stringsAsFactors = FALSE)
+
+# outlier file
+outliers <- read.csv("2019-03-08-109samples-maf10percent/outliers-samples.txt",
+                  header = FALSE,
+                  sep = ",",
+                  stringsAsFactors = FALSE)
+
+# explicit phenotype
+pheno$phenotype[pheno$phenotype == 1] <- "P"
+pheno$phenotype[pheno$phenotype == 2] <- "M"
+
+# add population
+pheno$pop <- pop$population[(match(pheno$IID, pop$sample.soc))]
+
+# tidy missing data
+#pheno[is.na(pheno$pop),]
+pheno$pop[pheno$IID == "A56-N"]    <- "Bruniquel"
+pheno$pop[pheno$IID == "I27-N"]    <- "Italy"
+pheno$pop[pheno$IID == "andrea-N"] <- "Pyrenees"
+pheno$pop[pheno$IID == "muna-N"]   <- "Pyrenees"
+
+# remove outliers
+pheno <- subset(pheno, subset = !(pheno$IID %in% outliers$V1))
+
+# subset to important info and rename
+pheno <- subset(pheno, select = c("IID", "phenotype", "pop"))
+colnames(pheno) <- c("sample_names", "phenotype", "pop")
+
+# write function to calculate and plot FST
+
+fst_calc_function <- function(path, pop_name){
+  
+  # set population
+  Mpop <- pheno$sample_names[pheno$phenotype == "M" & pheno$pop == pop_name]
+  Ppop <- pheno$sample_names[pheno$phenotype == "P" & pheno$pop == pop_name]
+  social_population_ls <- list(Mpop, Ppop)
+
+  # create GENOME object
+  test <- readData(path      = path,
+                 populations = social_population_ls,
+                 format      = "VCF")
+  
+ 
+
+  # scan the data with consecutive windows
+  # window size: 30000 nucleotides (type = 2, meaning only SNPs)
+  # jump size: 1000 nucleotides (type=2)
+  test.class.slide <- sliding.window.transform(test,
+                                             width = 30000,
+                                             jump  = 1000,
+                                             type  = 2)
+
+
+  # calculate fst for 108 individuals, for each sliding window
+  test_slide_fst <- F_ST.stats(test.class.slide, mode = "nucleotide")
+  
+  values <- test_slide_fst@nucleotide.F_ST
+
+  # negative FST values need to be replaced by zero 
+  values[values <= 0] <- 0
+
+  return(values)
+}
+  
+# FST between M and P in Bruniquel
+my_vcf_path <- "2019-03-08-109samples-maf10percent/tmp/"
+population_name <- "Bruniquel"
+bruniquel_fst <- fst_calc_function(path = my_vcf_path, pop_name = population_name)
+
+# FST between M and P in Italy
+my_vcf_path <- "2019-03-08-109samples-maf10percent/tmp/"
+population_name <- "Italy"
+italy_fst <- fst_calc_function(path = my_vcf_path, pop_name = population_name)
+
+
+# FST between M and P in Pyrenees
+my_vcf_path <- "2019-03-08-109samples-maf10percent/tmp/"
+population_name <- "Pyrenees"
+pyrenees_fst <- fst_calc_function(path = my_vcf_path, pop_name = population_name)
+
+
+# make into a dataframe
+fst_vec <- c(bruniquel_fst,
+             italy_fst,
+             pyrenees_fst)
+
+region_vec <- c(1:length(bruniquel_fst),
+                1:length(italy_fst),
+                1:length(pyrenees_fst))
+
+population_vec <- c(rep("Bruniquel", times = length(bruniquel_fst)),
+                    rep("Italy", times = length(italy_fst)),
+                    rep("Pyrenees", times = length(pyrenees_fst)))
+  
+fst_dat <- as.data.frame(cbind(population_vec, fst_vec, region_vec),
+                         stringsAsFactors = FALSE)
+  
+fst_dat$fst_vec <- as.numeric(fst_dat$fst_vec)
+
+# Plot
+fst_dat  %>%
+  ggplot(aes(x     = region_vec,
+             y     = fst_vec,
+             group = population_vec,
+             color = population_vec)) +
+    #geom_line() +
+  geom_point(size = 0.5, alpha = 0.4) +
+  scale_color_manual(values = c("#66c2a5","#fc8d62","#8da0cb")) +
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y        = element_text(size = 22),
+        axis.title.x       = element_text(size = 22),
+        axis.title.y       = element_text(size = 22)) +
+  ylim(0, 0.4) +
+  xlab("30kb windows with a 10kb slide") +
+  ylab("FST between single- and multiple-queens")
+
+        
+    
+# save for MS
+ggsave(filename = "figure2f.pdf", width = 8, height = 8, dpi = 600)
+
+```
+
+## 6. Figure 3a: mapping quality check
+
+```{r suppl fig 3a unmapped reads box plot, eval = TRUE, echo = FALSE, include = TRUE}
+# input needed
+# sample unmapped total
+sample_unmapped_total <- read.csv("2019-03-15-map_reads_to_minion_flye/sample-unmapped-total.txt",
+                  header = FALSE,
+                  sep = " ",
+                  stringsAsFactors = FALSE)
+
+# name the columns
+colnames(sample_unmapped_total) <- c("sample", "unmapped", "total")
+
+# update social type
+sample_unmapped_total$sample[sample_unmapped_total$sample == "A56-N"]    <- "A56-M"
+sample_unmapped_total$sample[sample_unmapped_total$sample == "I27-N"]    <- "I27-P"
+sample_unmapped_total$sample[sample_unmapped_total$sample == "andrea-N"] <- "andrea-P"
+sample_unmapped_total$sample[sample_unmapped_total$sample == "muna-N"]   <- "muna-P"
+
+# calculate proportion of unmapped reads
+sample_unmapped_total$unmap_prop <- sample_unmapped_total$unmapped / sample_unmapped_total$total
+
+# calculate mapped read counts
+sample_unmapped_total$mapped <- sample_unmapped_total$total - sample_unmapped_total$unmapped
+
+# add a social column
+sample_unmapped_total$social <- gsub(x = sample_unmapped_total$sample,
+                                     pattern = ".*-",
+                                     replacement = "")
+
+# add factor levels
+#sample_unmapped_total$social <- factor(sample_unmapped_total$social)
+
+# t-test: is there a significant difference in proportion of unmapped reads
+t.test(x = sample_unmapped_total$unmap_prop[sample_unmapped_total$social == "M"],
+  y = sample_unmapped_total$unmap_prop[sample_unmapped_total$social == "P"])$p.value < 0.05
+
+
+# make a long format table
+sample_unmapped_total_long <- gather(data = sample_unmapped_total,
+                    key = reads,
+                    value = value,
+                    c(unmapped, mapped),
+                    factor_key = TRUE)
+# add factor for samples 
+# to group samples by social type
+sample_unmapped_total_long$sample <- factor(sample_unmapped_total_long$sample,
+                                            levels = unique(sample_unmapped_total_long$sample[order(sample_unmapped_total_long$social)]))
+
+
+# plot stacked and proportion
+ggplot(sample_unmapped_total_long, aes(fill = reads,
+                   y = value,
+                   x = sample)) + 
+  geom_bar(position = "fill", stat = "identity") +
+  scale_fill_manual(values = c("lightgrey","grey48")) +
+  theme_classic() +
+  theme(axis.text.x        = element_text(size = 6, angle = 45, hjust = 1),
+        axis.text.y        = element_text(),
+        axis.title.x       = element_text(),
+        axis.title.y       = element_text()) +
+  xlab("samples") +
+  ylab("Proportion of total sequenced reads")
+
+#There is no significant difference of unmapped proportion between social types.
+
+png(filename = "figure-supplementary-3a_unmapped_proportions.png")
+
+# plot Basic boxplot
+boxplot(sample_unmapped_total$unmap_prop ~ sample_unmapped_total$social,
+        range = 0,
+        col = c("white", "grey"),
+        log = "y",
+        xlab = "",
+        ylab = "Proportion of unmapped reads",
+        names = c("single-queen", "multiple-queen"))
+
+# obtain levels
+sample_unmapped_total$social <- factor(sample_unmapped_total$social, levels = c("M", "P"))
+mylevels <- levels(sample_unmapped_total$social)
+
+# obtain M and P proportion
+levelProportions <- summary(sample_unmapped_total$social) / nrow(sample_unmapped_total)
+
+# for each social type
+for(i in 1:length(mylevels)){
+  
+  thislevel <- mylevels[i]
+  
+  thisvalues <- sample_unmapped_total[sample_unmapped_total$social==thislevel, "unmap_prop"]
+  
+  # take the x-axis indices and add a jitter, proportional to the N in each level
+  myjitter <- jitter(rep(i, length(thisvalues)), amount=levelProportions[i]/2)
+  
+  points(myjitter,
+         thisvalues,
+         pch = 20,
+         col = rgb(0,0,0,.9)) 
+  
+}
+
+# save for MS
+dev.off()
+```
+
+
+```{r fig 3a read depth fold change, eval = TRUE, echo = FALSE, include = TRUE}
+
+# data
+# I calculated the read depth for Bruniquel on all SNPs, for all single-queen colonies and for all multiple-queen colonies (input was VCF, tool was bedtools query, number of SNP:777165
+# import coverage for monogynous - this takes few minutes
+monogynous.coverage <- read.csv("2019-03-14-bruniquel-maf10percent/result/monogynous-samples-bruniquel-codingnoncoding.read.depth",
+                                header = FALSE,
+                                sep = "",
+                                stringsAsFactors = FALSE)
+
+# import coverage for polygynous
+polygynous.coverage <- read.csv("2019-03-14-bruniquel-maf10percent/result/polygynous-samples-bruniquel-codingnoncoding.read.depth",
+                                header = FALSE,
+                                sep = "",
+                                stringsAsFactors = FALSE)
+
+# import M sample list
+monogynous.sample.vec <- readLines("2019-03-14-bruniquel-maf10percent/result/monogynous-samples-bruniquel-codingnoncoding.sample.list")
+
+# import P sample list
+polygynous.sample.vec <- readLines("2019-03-14-bruniquel-maf10percent/result/polygynous-samples-bruniquel-codingnoncoding.sample.list")
+
+# import snp mapping quality mean
+snp_mapping_quality_mean_df <- read.csv("2019-03-14-bruniquel-maf10percent/snp-mapping-quality-mean",
+                                        header = FALSE,
+                                        sep = "",
+                                        stringsAsFactors = FALSE)
+
+# import contig length
+intersected_contig_length_df <- read.csv("../../2019-03-06-minion_flye_QC/Ppal_E.contig.length",
+                                         header = FALSE,
+                                         sep = "",
+                                         stringsAsFactors = FALSE)
+
+# import snp matrix
+snp_matrix  <- read.csv(file = "2019-03-14-bruniquel-maf10percent/result/2019-03-14-bruniquel-snp_matrix.txt",
+                        header = FALSE,
+                        sep = "\t",
+                        stringsAsFactors = FALSE)
+
+# import sample list
+sample_list_vec <- read.table(file = "2019-03-14-bruniquel-maf10percent/result/2019-03-14-bruniquel-sample_names.txt",
+                              header = FALSE,
+                              stringsAsFactors = FALSE,
+                              sep = "")
+
+# import extreme and normal contig read depth mean by samples - outlier investigation
+both_contig_coverage <- read.table(file = "2019-03-14-bruniquel-maf10percent/result/both-contig-coverage",
+                                   header = FALSE,
+                                   sep = "\t")
+
+both_contig_coverage_bymedian <- read.table(file = "2019-03-14-bruniquel-maf10percent/result/both-contig-coverage-bymedian",
+                                            header = FALSE,
+                                            sep = "\t")
+
+# import population info
+pop_info_df <- read.csv(file = "2019-03-14-bruniquel-maf10percent/S2_pheidole_pop_paper.csv")
+
+# import mean read depth by 5kb regions of contig 1346
+#contig_1346_5kb_coverage <- read.table(file = "result/contig_1346-all-samples-read-count5kb", header = TRUE, sep = "\t")
+
+# import read depth for 3 contigs and 2 samples (read balance)
+read_balance_query  <- read.csv(file = "2019-03-14-bruniquel-maf10percent/result/2020-02-17-read-balance-query",
+                        header = FALSE,
+                        stringsAsFactors = FALSE,
+                        sep = "\t")
+# code 
+# name columns
+colnames(monogynous.coverage) <- c("chr", "loc", monogynous.sample.vec)
+colnames(polygynous.coverage) <- c("chr", "loc", polygynous.sample.vec)
+
+# select columns to change class from character to numeric
+M_cols_to_change <- c(3:ncol(monogynous.coverage))
+P_cols_to_change <- c(3:ncol(polygynous.coverage))
+
+# change class
+monogynous.coverage[M_cols_to_change] <- sapply(monogynous.coverage[M_cols_to_change], as.numeric)
+polygynous.coverage[P_cols_to_change] <- sapply(polygynous.coverage[P_cols_to_change], as.numeric)
+
+# change NA for 0
+monogynous.coverage[is.na(monogynous.coverage)] <- 0
+polygynous.coverage[is.na(polygynous.coverage)] <- 0
+
+# add a column for the SNP_name
+monogynous.coverage$SNP_name <- paste(monogynous.coverage$chr, monogynous.coverage$loc, sep = "_")
+polygynous.coverage$SNP_name <- paste(polygynous.coverage$chr, polygynous.coverage$loc, sep = "_")
+
+# populate new column with means of read depth for each locus
+monogynous.coverage$read_depth_mean <- rowMeans(x = monogynous.coverage[M_cols_to_change])
+polygynous.coverage$read_depth_mean <- rowMeans(x = polygynous.coverage[P_cols_to_change])
+
+# add a column for median of read depth
+monogynous.coverage$read_depth_median <- apply(monogynous.coverage[M_cols_to_change], 1, median) 
+polygynous.coverage$read_depth_median <- apply(polygynous.coverage[P_cols_to_change], 1, median) 
+
+# calculate the mean normalised by the median (mean/median)
+monogynous.coverage$read_depth_mean_normalised <- monogynous.coverage$read_depth_mean / monogynous.coverage$read_depth_median
+polygynous.coverage$read_depth_mean_normalised <- polygynous.coverage$read_depth_mean / polygynous.coverage$read_depth_median
+
+# make a wide dataframe
+bruniquel_coverage_wide <- merge(x = monogynous.coverage[, c("SNP_name", "read_depth_mean_normalised")], 
+                                 y = polygynous.coverage[, c("SNP_name", "read_depth_mean_normalised")], 
+                                 by = "SNP_name")
+# give colnames
+colnames(bruniquel_coverage_wide) <- c("SNP_name", "read_depth_mean_normalised.M", "read_depth_mean_normalised.P")
+
+# add a column for log2(meanPnorm / meanNnorm)
+bruniquel_coverage_wide$log_fold_change <- log2(bruniquel_coverage_wide$read_depth_mean_normalised.M / bruniquel_coverage_wide$read_depth_mean_normalised.P)
+
+                        
+# change name of SNP for the short version
+bruniquel_coverage_wide$contig <- gsub(x = bruniquel_coverage_wide$SNP_name, pattern = "_pilon.*", replacement = "")  #yw was here
+
+
+# make a plot of read depth between M and P
+# plot_title    <- paste("Figure 1: SNP-level fold change of read depth in P samples with respect to M")
+# plot_subtitle <- paste("Data: contig1 and contig2, Bruniquel coding-only, no LD pruning, maf > 0.05")
+# x_title       <- paste("Locus")
+# y_title       <- paste("Log2 fold change of read depth (P / M)")
+# ggplot(subset(bruniquel_coverage_wide, subset = contig %in% c('contig_1', 'contig_2')), aes(x = SNP_name, y = log_fold_change, group = 1)) +
+#    geom_line() +
+#    labs(title = plot_title, subtitle = plot_subtitle, x = x_title, y = y_title) +
+#    theme_classic() +
+#    theme(axis.text.x = element_blank())
+
+
+
+
+
+### prep the data for a shorter name of contigs
+monogynous.coverage$contig <- gsub(x = monogynous.coverage$chr, pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", replacement = "")
+polygynous.coverage$contig <- gsub(x = polygynous.coverage$chr, pattern = "_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon", replacement = "")
+
+
+
+### Normalise each read count by sample median
+# copy the dataframe to overwrite it with normalised mean
+monogynous.coverage_normalised <- monogynous.coverage
+polygynous.coverage_normalised <- polygynous.coverage
+
+# loop through each M sample
+for(this_sample in monogynous.sample.vec){
+  # obtain the median of each sample
+  this_sample_median <- median(unlist(monogynous.coverage[, this_sample]))
+  # normalise each read count by median
+  monogynous.coverage_normalised[this_sample] <- monogynous.coverage[, this_sample] / this_sample_median
+}
+
+# loop through each P sample
+for(this_sample in polygynous.sample.vec){
+  # obtain the median of each sample
+  this_sample_median <- median(unlist(polygynous.coverage[, this_sample]))
+  # normalise each read count by median
+  polygynous.coverage_normalised[this_sample] <- polygynous.coverage[, this_sample] / this_sample_median
+}
+
+
+
+### calculate means per contig and per social group
+# contig names in a vector
+short_contig_vec <- unique(bruniquel_coverage_wide$contig)
+
+# make a dataframe to keep the results
+bruniquel_contig_coverage <- as.data.frame(matrix(NA, ncol = 3, nrow = length(short_contig_vec)))
+
+# name columns
+colnames(bruniquel_contig_coverage) <- c("contig", "M_mean", "P_mean")
+
+# add names of contigs
+bruniquel_contig_coverage$contig <- short_contig_vec
+
+# loop through each contig
+for(this_contig in short_contig_vec){
+  # calculate the mean of read counts for monogynous samples
+  bruniquel_contig_coverage$M_mean[bruniquel_contig_coverage$contig == this_contig]   <- mean(unlist(monogynous.coverage_normalised[monogynous.coverage_normalised$contig == this_contig, monogynous.sample.vec]))
+  # calculate mean of read counts for polygynous samples
+  bruniquel_contig_coverage$P_mean[bruniquel_contig_coverage$contig == this_contig]   <- mean(unlist(polygynous.coverage_normalised[polygynous.coverage_normalised$contig == this_contig, polygynous.sample.vec]))
+}
+
+# calculate log2 fold change (P/M), normalised by median
+bruniquel_contig_coverage$read_log2_fold_change <- log2( bruniquel_contig_coverage$M_mean / bruniquel_contig_coverage$P_mean)
+
+
+
+### plot and look at outliers
+# at the contig level, pick the top 10 contigs with largest departure from genome-wide read depth (less P read depth)
+top_10_contig_vec <- bruniquel_contig_coverage$contig[order(bruniquel_contig_coverage$read_log2_fold_change)][1:10]
+
+# rank the contigs from lowest fold change to highest
+bruniquel_contig_coverage_ordered <- bruniquel_contig_coverage[order(bruniquel_contig_coverage$read_log2_fold_change), ]
+
+# add a column for rank
+bruniquel_contig_coverage_ordered$contig_rank <- 1:nrow(bruniquel_contig_coverage_ordered)
+  
+# save this table for future use
+# write.table(x = bruniquel_contig_coverage_ordered, file = "2019-03-14-bruniquel-maf10percent/result/bruniquel_contig_coverage_ordered", quote = FALSE, row.names = FALSE)
+
+# obtain contig lentgh
+colnames(intersected_contig_length_df) <- c("Ppal_E_contig_name", "contig_length")
+
+intersected_contig_length_df$contig_name <- gsub(x = intersected_contig_length_df$Ppal_E_contig_name,
+                                                 pattern = "Ppal_E.",
+                                                 replacement = "")
+
+bruniquel_contig_coverage$contig_length <- intersected_contig_length_df$contig_length[match(bruniquel_contig_coverage$contig,
+                                                                                            intersected_contig_length_df$contig_name)]
+
+# order the contigs by decreasing length
+bruniquel_contig_coverage$contig <- factor(bruniquel_contig_coverage$contig,
+                                           levels = unique(bruniquel_contig_coverage$contig[order(bruniquel_contig_coverage$contig_length, decreasing = TRUE)]))
+
+# plot the result
+# make a plot of read proportion (P / M)
+plot_title    <- "Figure 2: Contig-level fold change of read depth in P samples with respect to M"
+plot_subtitle <- "Data are read depth mean per contig, median normalised"
+x_title       <- "unordered coding and non-coding contigs, from Bruniquel, maf > 0.05"
+y_title       <- "Log2 fold change of read depth (P / M)"
+# ggplot(bruniquel_contig_coverage, aes(x = contig, y = read_log2_fold_change)) +
+#    geom_point(alpha = 0.4, shape = 15) +
+#    labs(title = plot_title, subtitle = plot_subtitle, x = x_title, y = y_title) +
+#    theme_classic() +
+#    theme(axis.text.x = element_blank()) +
+#    geom_hline(yintercept = 0, colour = "cyan")
+    
+# prepare the plot for MS figure 3a
+x_title       <- "Contig (ordered by decreasing length)"
+y_title       <- "Log2 fold change of read depth (P / M)"
+ggplot(bruniquel_contig_coverage,
+       aes(x = contig, y = read_log2_fold_change)) +
+   geom_point(aes(fill = read_log2_fold_change,
+                  
+                  size = abs(read_log2_fold_change)),
+              colour = "grey", shape = 21) +
+   labs(x = x_title, y = y_title) +
+   theme_classic() +
+   #geom_hline(yintercept = 0, color = "darkgrey", size = 0.35) +
+   theme(panel.background = element_rect(fill = "transparent"),
+         plot.background = element_rect(fill = "transparent", color = NA),
+           panel.grid.major = element_blank(),
+           panel.grid.minor = element_blank(),
+           axis.text.x      = element_blank(),
+           axis.ticks.x     = element_blank(),
+           axis.text.y      = element_text(size = 12),
+           axis.title.x     = element_text(size = 12),
+           axis.title.y     = element_text(size = 12),
+         panel.border     = element_rect(colour = "black", fill = NA, size = 0.5)) +
+  scale_fill_continuous_diverging(palette = "Blue-Yellow 3") +
+  scale_x_discrete(expand = expand_scale(mult = c(0.01, 0.01), add = c(0.5, 0.5))) +
+  scale_y_continuous(breaks = seq(-1.5, 0.5, 0.5))
+
+
+# save for MS
+ggsave(filename = "figure3a_coverageplot.png", width = 6, height = 4, dpi = 600, bg = "transparent")
+
+
+
+
+
+# it would be nice to make a cumulative length overlayed, 
+# to show that the majority of the genome has a neutral fold change
+
+# order the dataframe by decreasing length
+bruniquel_contig_coverage_ordered <- bruniquel_contig_coverage[order(bruniquel_contig_coverage$contig_length, decreasing = TRUE), ]
+
+bruniquel_contig_coverage_ordered$contig_length_cum_sum <- cumsum(bruniquel_contig_coverage_ordered$contig_length)
+
+# save this dataset
+# save this table for future use
+# write.table(x = bruniquel_contig_coverage_ordered, file = "2019-03-14-bruniquel-maf10percent/result/bruniquel_contig_coverage_ordered", quote = FALSE, row.names = FALSE)
+
+#plot(x = bruniquel_contig_coverage_ordered$contig, y = bruniquel_contig_coverage_ordered$contig_length_cum_sum)
+
+# ggplot(bruniquel_contig_coverage_ordered, aes(x = contig, y = contig_length_cum_sum, group = 1)) +
+#   geom_line(data = bruniquel_contig_coverage_ordered, aes(x = contig, y = contig_length_cum_sum, group = 1))
+x_title       <- "Contigs (ordered by decreasing length)"
+y_title       <- "Cumulative length of contigs"
+ggplot(data = bruniquel_contig_coverage_ordered, aes(x = contig, y = contig_length_cum_sum)) + 
+  geom_line(group = 1, colour = "orange", size = 1.75) +
+  scale_y_continuous(position = "right") +
+  theme_classic() +
+  labs(x = x_title, y = y_title) +
+  theme(panel.background = element_rect(fill = "transparent"),
+        plot.background = element_rect(fill = "transparent", color = NA),
+        panel.grid.major.x  = element_blank(),
+        panel.grid.major.y = element_line(colour = "black", size = 0.15, linetype = "dashed"),
+        panel.grid.minor = element_blank(),
+        axis.text.x      = element_blank(),
+        axis.ticks.x     = element_blank(),
+        axis.text.y      = element_text(size = 12),
+        axis.title.x     = element_text(size = 12),
+        axis.title.y     = element_text(size = 12),
+        legend.position = "none",
+        panel.border     = element_rect(colour = "black", fill = NA, size = 0.5))
+
+
+  
+
+# save for MS
+ggsave(filename = "figure3a_cumsumplot.png", bg = "transparent", width = 4, height = 4, dpi = 600)
+```
+
+```{r fig 2b sausage contig coverage, eval = TRUE, echo = FALSE, include = TRUE}
+# save yourself 30 minutes: instead of running previous chunk:
+# bruniquel_contig_coverage_ordered <- read.table(2019-03-14-bruniquel-maf10percent/result/bruniquel_contig_coverage_ordered, header = TRUE)
+bruniquel_contig_coverage_ordered <- read.table("2019-03-14-bruniquel-maf10percent/result/bruniquel_contig_coverage_ordered", header = TRUE)
+
+test <- head(bruniquel_contig_coverage_ordered)
+test
+
+# we need to substract 1 to each end of following contig
+test$ignore_col <- 1
+
+# make a startpos column for the cumulative bp of each contig
+#https://stackoverflow.com/questions/14689424/use-a-value-from-the-previous-row-in-an-r-data-table-calculation
+updated_test <- mutate(test, contig_start_pos = lag(contig_length_cum_sum) + ignore_col)
+updated_test$contig_start_pos[1] <- 1
+
+# plot contigs
+d1 <- data.frame(startpos = updated_test$contig_start_pos,
+                endpos = updated_test$contig_length_cum_sum,
+                value = updated_test$read_log2_fold_change)
+
+
+
+# plot log fold change for all contigs in Bruniquel coding regions.
+# the novel thing: each contig is a rectangle whose length represents its bp length
+
+# prepare the plot for MS figure 2b
+x_title       <- "Contig (ordered by decreasing length)"
+y_title       <- "Log2 fold change of read depth (P / M)"
+
+# http://sape.inf.usi.ch/quick-reference/ggplot2/geom_rect
+ggplot() + 
+  scale_x_continuous(name = "x") + 
+  scale_y_continuous(name = "y") +
+  geom_rect(data = d1, 
+            mapping = aes(xmin = startpos,
+                          xmax = endpos, 
+                          ymin = value, 
+                          ymax = value+0.02), 
+            color = "black",
+            fill = value) +
+  scale_fill_continuous_diverging(palette = "Blue-Yellow 3")+
+  theme_classic() +
+  labs(x = x_title, y = y_title) 
+
+# save for MS
+ggsave(filename = "figure2b_coverage_contig.png", bg = "transparent", width = 4, height = 4, dpi = 600)
+```
+
+```{r fig 3b 5kb contig, eval = TRUE, echo = FALSE, include = TRUE}
+
+
+# data
+# set the directory where the data are (normalised by median)
+mydir <- "2019-03-14-bruniquel-maf10percent/result/read_coverage_per_5kb_all_samples"
+
+# list all the files in this directory
+myfiles <- as.list(list.files(path = mydir,
+                              pattern = ".*all-samples-read-count5kb",
+                              full.names = TRUE))
+
+# vector of contig names
+contig_name_vec <- plyr::laply(myfiles,
+                         gsub,
+                         pattern = "2019-03-14-bruniquel-maf10percent/result/read_coverage_per_5kb_all_samples/|_all-samples-read-count5kb",
+                         replacement = "")
+
+# remove three problematic contigs (1st line are from bash loop, 2nd line from previous run of following R loop - very little coverage)
+contig_name_vec <- contig_name_vec[!(contig_name_vec %in% c("contig_2271",
+                                                            "contig_2278",
+                                                            "contig_4048"))]
+
+# import each dataset into a list
+all_samples_read_count5kb_list <- plyr::llply(myfiles,
+                                        read.table,
+                                        fill = TRUE,
+                                        header = TRUE)
+
+# name list elements (ie contigs)
+names(all_samples_read_count5kb_list) <- contig_name_vec
+
+# import population info
+pop_info_df <- read.csv(file = "2019-03-14-bruniquel-maf10percent/S2_pheidole_pop_paper.csv")
+
+# import name of contig with rank (M_enriched, not enriched, P_enriched)
+bruniquel_contig_coverage_ordered <- read.table(file = "2019-03-14-bruniquel-maf10percent/result/bruniquel_contig_coverage_ordered",
+                                                header = TRUE)
+
+# analysis
+# make a dataset list
+dataset_list <- all_samples_read_count5kb_list
+
+# run a wilcoxon test per window on those contigs
+# run a KS test per window on those contigs
+
+# create a test result dataframe
+wilcoxon_ks_tests_df <- as.data.frame(matrix(ncol = 4))
+
+# name columns
+colnames(wilcoxon_ks_tests_df) <- c("window", "stat_test", "p_value", "contig")
+
+# create vector for contigs that need to be troubleshot
+rank_of_files_with_no_row <- c()
+rank_of_files_with_superlow_coverage <- c()
+
+# loop through contigs
+for(this_contig_rank in 1:length(contig_name_vec)){
+  # find the file (read depth per sample and per window)
+  this_file <- dataset_list[[this_contig_rank]]
+  
+  # if this file has no row, make a note of it
+  if(nrow(this_file) == 0){
+    rank_of_files_with_no_row <- c(rank_of_files_with_no_row, this_contig_rank)
+  } else {
+      # some samples do not have read coverage for that 5kb window
+      # replace all NA (added by read.table fill) by 0
+      this_file[is.na(this_file)] <- 0
+      
+      # calculate the sum of coverage per sample
+      sum_of_coverage_per_sample <- colSums(this_file)
+      
+      # checking for no coverage: subset to only the values that are unique
+      unique_values <- unique(sum_of_coverage_per_sample)
+      
+      # checking for no coverage: calculate the mode of the sums
+      mode_of_sums <- unique_values[which.max(tabulate(match(sum_of_coverage_per_sample, unique_values)))]
+      
+      # checking for no coverage: if the mode is 0
+      if(mode_of_sums == 0){
+        # checking for no coverage: save the contig rank for investigation
+        rank_of_files_with_superlow_coverage <- c(rank_of_files_with_superlow_coverage, this_contig_rank)
+    
+      } else {
+      
+          # preparing for data wrangling: add rownames as window rank (1 is 0-5kb, 2 is 5-10kb, etc)
+          row.names(this_file) <- seq(from = 1, to = nrow(this_file), by = 1)
+          
+          # preparing for data wrangling: add column names as samples (A01-P, etc)
+          colnames(this_file) <- gsub(x = colnames(this_file), pattern = "\\.", replacement = "-")
+          
+          # preparing for data wrangling: vector of samples
+          sample_vec <- colnames(this_file)
+          
+          # preparing for normalisation: calculate number of window in this contig
+          num_of_windows <- nrow(this_file)
+          
+          # preparing for normalisation: obtain mean per sample in this contig
+          this_file_mean_per_sample <- apply(this_file, 2, mean)
+        
+          # preparing for normalisation: make a result table with normalised read depth
+          this_file_normalised <- this_file
+        
+          # normalise each read depth by mean (per sample)
+          for(my_position in 1:length(sample_vec)){
+            
+            # subset window coverage file for one sample
+            this_file_this_sample <- subset(this_file, select = colnames(this_file) == sample_vec[my_position])
+            
+            # normalise each window coverage by the sample mean
+            this_file_this_sample_normalised <- this_file_this_sample / 
+              this_file_mean_per_sample[names(this_file_mean_per_sample) == sample_vec[my_position]]
+            
+            # save result
+            this_file_normalised[names(this_file_normalised) == sample_vec[my_position]] <- this_file_this_sample_normalised
+          }
+          
+          # preparation for plotting: keep samples from each social type in a vector   
+          mono_samples <- grep(pattern = "\\-M", x = colnames(this_file_normalised), value = TRUE)
+          mono_samples <- c(mono_samples, "A56-N")
+          poly_samples <- grep(pattern = "\\-P", x = colnames(this_file_normalised), value = TRUE) 
+          poly_samples <- c(poly_samples, "I27-N", "muna-N", "andrea-N")
+          
+          # preparation for plotting: add window name
+          this_file_normalised$window <- 1:num_of_windows
+          
+          # create two vectors for p-values of statistical test
+          # create two vectors for means of normalised read depth
+          all_windows_wilcoxon_pvalue   <- c()
+          all_windows_KS_pvalue         <- c()
+          all_windows_M_mean_read_depth <- c()
+          all_windows_P_mean_read_depth <- c()
+          
+          # loop through each window
+          for(window_position in 1:num_of_windows){
+             
+             # combine normalised read depth for each type of samples
+             M_samples_read_depth_vec <- unlist(subset(this_file_normalised, 
+                                                       select = colnames(this_file_normalised) %in% mono_samples,
+                                                       subset = window == window_position))
+             P_samples_read_depth_vec <- unlist(subset(this_file_normalised,
+                                                      select = colnames(this_file_normalised) %in% poly_samples,
+                                                      subset = window == window_position))
+              
+             # run Wilcoxon test and store p-value
+             all_windows_wilcoxon_pvalue <- c(all_windows_wilcoxon_pvalue, 
+                                               wilcox.test(x = M_samples_read_depth_vec, P_samples_read_depth_vec)$p.value)
+              
+             # store p-value from KS test 
+             all_windows_KS_pvalue <- c(all_windows_KS_pvalue, 
+                                               ks.test(x = M_samples_read_depth_vec, P_samples_read_depth_vec)$p.value)
+             
+             # keep the mean of normalised read depth for M samples
+             all_windows_M_mean_read_depth <- c(all_windows_M_mean_read_depth,
+                                            mean(M_samples_read_depth_vec))
+             
+             # keep the mean of normalised read depth for P samples
+             all_windows_P_mean_read_depth <- c(all_windows_P_mean_read_depth,
+                                            mean(P_samples_read_depth_vec))
+             
+             
+            
+          }
+          
+          # combine into a df for plotting
+          read_depth_distribution_tests_df <- as.data.frame(cbind(1:num_of_windows,
+                                                                  all_windows_wilcoxon_pvalue,
+                                                                  all_windows_KS_pvalue,
+                                                                  all_windows_M_mean_read_depth,
+                                                                  all_windows_P_mean_read_depth))
+          
+          # name columns
+          colnames(read_depth_distribution_tests_df) <- c("window",
+                                                          "wilcoxon",
+                                                          "ks",
+                                                          "M_mean_read_depth",
+                                                          "P_mean_read_depth")
+        
+          # transform the wide df into long df
+          # make a window column (as a factor)
+          read_depth_distribution_tests_df$window <- factor(read_depth_distribution_tests_df$window)
+        
+          # Specify id.vars: the variables to keep but not split apart on
+          read_depth_distribution_tests_df_long <- melt(read_depth_distribution_tests_df, id.vars = c("window"))
+        
+          # rename columns
+          colnames(read_depth_distribution_tests_df_long) <- c("window",
+                                                               "stat_test",
+                                                               "p_value")
+          
+          # update window name
+          read_depth_distribution_tests_df_long$window <- paste(read_depth_distribution_tests_df_long$window,
+                                                                contig_name_vec[this_contig_rank], sep = "")
+          
+          # add column for contig
+          read_depth_distribution_tests_df_long$contig <- rep(contig_name_vec[this_contig_rank],
+                                                              times = nrow(read_depth_distribution_tests_df_long))
+          
+          # update class
+          read_depth_distribution_tests_df_long$stat_test <- as.character(read_depth_distribution_tests_df_long$stat_test)
+          
+          # store info in dataframe
+          wilcoxon_ks_tests_df <- rbind(wilcoxon_ks_tests_df, read_depth_distribution_tests_df_long)
+    }
+  }
+}
+
+# troubleshoot those contigs:
+# 3 contigs had no row in the original dataset
+rank_of_files_with_no_row
+
+# 40 contigs had very low coverage (in both social forms???)
+rank_of_files_with_superlow_coverage
+
+# remove NA 
+wilcoxon_ks_tests_df <- wilcoxon_ks_tests_df[complete.cases(wilcoxon_ks_tests_df), ]
+
+# adjust p value for multiple comparison in each test
+wilcoxon_test_df <- subset(wilcoxon_ks_tests_df, subset = stat_test == "wilcoxon") 
+wilcoxon_test_df$padj <- p.adjust(p = wilcoxon_test_df$p_value, method = "BH")
+
+ks_test_df <- subset(wilcoxon_ks_tests_df, subset = stat_test == "ks") 
+ks_test_df$padj <- p.adjust(p = ks_test_df$p_value, method = "BH")
+
+# transform the data for plotting (-log10(p))
+wilcoxon_test_df$padjlog10 <- -log10(wilcoxon_test_df$padj)
+ks_test_df$padjlog10       <- -log10(ks_test_df$padj)
+
+# set factor levels for window in the order of the contigs
+ks_test_df$window <- factor(ks_test_df$window, levels = ks_test_df$window)
+
+# set y axis label
+xaxis_label <- "5kb window"
+
+# change class
+bruniquel_contig_coverage_ordered$contig <- as.character(bruniquel_contig_coverage_ordered$contig)
+
+# merge the info about contig ranking and KS test
+ks_test_df$contig_rank <- bruniquel_contig_coverage_ordered$contig_rank[match(ks_test_df$contig,
+                                                                              bruniquel_contig_coverage_ordered$contig)]
+# some contigs in this dataset is not in the bruniquel dataset (not sure why)
+# remove them
+ks_test_df <- ks_test_df[complete.cases(ks_test_df), ]
+
+# sort dataframe by contig_rank and by window
+ks_test_df_sorted <- ks_test_df[order(ks_test_df$contig_rank, ks_test_df$window), ]
+
+# set number of contigs
+num_contig <- length(unique(ks_test_df_sorted$contig))
+
+# set the contig with the least fold change
+neutral_contig <- bruniquel_contig_coverage_ordered[which.min(abs(bruniquel_contig_coverage_ordered$read_log2_fold_change - 0)),
+                                                    "contig"]
+
+# set a new column with annotation
+ks_test_df_sorted$enrichment <- ifelse(ks_test_df_sorted$contig == neutral_contig,
+                                             "neutral",
+                                             "enriched")
+# if the contig rank is smaller than the one of the neutral contig, the enrichment is in monogynous reads
+ks_test_df_sorted$enrichment[ks_test_df_sorted$contig_rank < 
+                               unique(unlist(subset(ks_test_df_sorted,
+                                                    subset = enrichment == "neutral",
+                                                    select = contig_rank)))] <- "enriched_in_M"
+
+# if the contig is after the neutral contig, the enrichment is in polygynous reads
+ks_test_df_sorted$enrichment[ks_test_df_sorted$contig_rank >
+                               unique(unlist(subset(ks_test_df_sorted,
+                                                    subset = enrichment == "neutral",
+                                                    select = contig_rank)))] <- "enriched_in_P"
+
+# set y axis label
+yaxis_label <- "KS -log10(p)"
+
+# plot Kolmogorov-Smirnov black-grey alternating
+ggplot(ks_test_df_sorted,  aes(x = window, y = padjlog10, color = enrichment)) +
+      geom_point(size = 0.25) +
+      labs(x = xaxis_label, y = yaxis_label) +
+      theme_classic() +
+      theme(axis.text.x = element_blank(), legend.position = "none") +
+      geom_hline(yintercept = -log10(0.05), color = "#018571") +
+      scale_color_manual(values = rep(c("grey", "black"), num_contig)) +
+      guides(col = guide_legend(ncol = 2)) +
+      # Add highlighted points
+      geom_point(data = subset(ks_test_df_sorted, enrichment == "neutral"), color = "#018571", size = 0.25)
+
+# 2296 contigs
+length(unique(ks_test_df_sorted$contig))
+
+# change class
+ks_test_df_sorted$test_rank <- 1:nrow(ks_test_df_sorted)
+
+# rank of first window of neutral contig
+rank_of_first_window_of_neutral_contig <- 
+  unlist(subset(ks_test_df_sorted, subset = enrichment == "neutral", select = test_rank))[1]
+
+# change class
+ks_test_df_sorted$enrichment <- factor(ks_test_df_sorted$enrichment, 
+                                       levels = unique(ks_test_df_sorted$enrichment))
+ks_test_df_sorted$window <- factor(ks_test_df_sorted$window,
+                                   levels = unique(ks_test_df_sorted$window))
+ks_test_df_sorted$contig_rank <- factor(ks_test_df_sorted$contig_rank,
+                                        levels = unique(ks_test_df_sorted$contig_rank))
+
+# idea 1: plot Kolmogorov-Smirnov adjust p-value gradient
+# upgrade colours and sizes
+ggplot(ks_test_df_sorted,  aes(x = window,
+                               y = padjlog10)) +
+      geom_point(aes(fill = contig_rank,
+                     size = padjlog10),
+                 colour = "grey",
+                 shape = 21) +
+      labs(x = xaxis_label, y = yaxis_label) +
+      theme(legend.position = "none") +
+      geom_hline(yintercept = -log10(0.05),
+                 color = "grey95",
+                 size = 0.25) +
+      scale_fill_discrete_diverging(palette = "Blue-Yellow 3") +
+      theme(panel.background = element_rect(fill = "transparent"),
+         plot.background = element_rect(fill = "transparent", color = NA),
+           panel.grid.major = element_blank(),
+           panel.grid.minor = element_blank(),
+           axis.text.y      = element_blank(),
+           axis.ticks.y     = element_blank(),
+           axis.ticks.x     = element_blank(),
+           axis.text.x      = element_text(size = 12),
+           axis.title.x     = element_text(size = 12),
+           axis.title.y     = element_text(size = 12),
+         panel.border     = element_rect(colour = "black", fill = NA, size = 0.5)) +
+      # the left of the plot will have some space *0.01 unit and added 0.5 unit
+      # same for the right of the plot
+      scale_x_discrete(expand = expand_scale(mult = c(0.01, 0.01), add = c(0.5, 0.5))) +
+      coord_flip()
+
+# save plot
+ggsave(filename = "figure3b_KS_read_depth_plot.png",  width = 4, height = 4, dpi = 600)
+
+# idea 2: make an equivalent colour density plot -  cannot do because not equal size groups
+# https://www.r-graph-gallery.com/2d-density-plot-with-ggplot2.html#distr
+# a <- data.frame( x=rnorm(20000, 10, 1.9), y=rnorm(20000, 10, 1.2) )
+# b <- data.frame( x=rnorm(20000, 14.5, 1.9), y=rnorm(20000, 14.5, 1.9) )
+# c <- data.frame( x=rnorm(20000, 9.5, 1.9), y=rnorm(20000, 15.5, 1.9) )
+# data <- rbind(a,b,c)
+# ggplot(data, aes(x=x, y=y) ) +
+#   stat_density_2d(aes(fill = ..density..), geom = "raster", contour = FALSE) +
+#   scale_x_continuous(expand = c(0, 0)) +
+#   scale_y_continuous(expand = c(0, 0)) +
+#   theme(
+#     legend.position='none'
+#   )
+
+# idea 3: make 2 histograms of read depth split per social group, with stars for sig KS
+#https://www.r-graph-gallery.com/histogram_several_group.html
+# Build dataset with different distributions
+
+
+# make a dataframe
+read_depth_histo <- as.data.frame(
+  cbind(rep(read_depth_distribution_tests_df$window, times = 2),
+                      rep(read_depth_distribution_tests_df$ks, times = 2),
+                      c(read_depth_distribution_tests_df$M_mean_read_depth,
+                      read_depth_distribution_tests_df$P_mean_read_depth),
+        c(rep("M", times = nrow(read_depth_distribution_tests_df)),
+          rep("P", times = nrow(read_depth_distribution_tests_df))
+          )
+        ),
+  stringsAsFactors = FALSE
+  )
+
+# name columns
+colnames(read_depth_histo) <- c("window", "ks", "depth_mean", "social")
+read_depth_histo$ks <- as.numeric(read_depth_histo$ks)
+read_depth_histo$depth_mean <- as.numeric(read_depth_histo$depth_mean)
+
+# str(read_depth_histo) 
+
+# calculate padjust
+read_depth_histo$padj <- p.adjust(read_depth_histo$ks, method = "BH")
+
+# Represent it
+read_depth_histo %>%
+  ggplot( aes(x = depth_mean, fill = social)) +
+  geom_histogram(bins = 25,
+                 alpha = 0.4,
+                 position =  "identity") +
+  scale_fill_manual(values = c("#BAAE00", "#9FA2FF")) +
+  theme_classic() +
+  labs(fill  ="")
+
+read_depth_histo %>%
+  ggplot( aes(x = depth_mean, colour = social)) +
+  geom_freqpoly(bins = 25,
+                 alpha = 0.4) +
+  scale_colour_manual(values = c("#BAAE00", "#9FA2FF")) +
+  theme_classic() +
+  labs(fill  ="")
+
+# read_depth_histo %>%
+#   ggplot( aes(x = depth_mean, fill = social)) +
+#   geom_density(colour = "grey",
+#                  alpha = 0.6) +
+#   scale_fill_manual(values = c("#BAAE00", "#9FA2FF")) +
+#   theme_classic() +
+#   labs(fill  ="")
+
+
+#"#9FA2FF" "#D7D9FF" "#F1F1F1" "#EAE191" "#BAAE00"
+
+# idea 4: condense info in violin plot of read depth
+
+```
+
+
+```{r fig 3b 5kb read depth fold change, eval = TRUE, echo = FALSE, include = TRUE}
+
+
+# subset for just the read depth
+# p_value is missleading, it actually means read depth (median-normalised, so values are low)
+window_fold_change_df <- filter(wilcoxon_ks_tests_df,
+                                stat_test %in% c("M_mean_read_depth", "P_mean_read_depth"))
+
+# make a df window | M_read_depth | P_read_depth | read_log2_fold_change
+window_fold_change_spread <- window_fold_change_df %>%
+  spread(key = stat_test, value = p_value)
+
+#str(window_fold_change_spread)
+
+# investigate windows with a read depth of zero in one of the social types
+# filter(window_fold_change_spread, P_mean_read_depth == 0)
+# 11contig_111 has no P, and a very low M reads (compared to summary(window_fold_change_spread$M_mean_read_depth)), so I am happy to remove that window
+
+# filter(window_fold_change_spread, M_mean_read_depth == 0) %>% select(window)
+# 1contig_2733
+# 1contig_4841
+# 2contig_172
+# 2contig_240
+# 2contig_521
+# 30contig_2379
+# 50contig_4821
+# similar findings here: the P means are really low 
+
+# remove those outliers
+window_fold_change_spread_no0 <- window_fold_change_spread %>% 
+  filter(P_mean_read_depth != 0) %>% 
+  filter(M_mean_read_depth != 0)
+
+# calculate log2 fold change (P/M)
+window_fold_change_spread_no0$read_log2_fold_change <- log2(window_fold_change_spread_no0$M_mean_read_depth / window_fold_change_spread_no0$P_mean_read_depth)
+
+
+# then arrange x for decreasing order of contigs - this does not respect the agouti stitching
+# it needs to be this file: nonpolymorphic_75_man_agouti_df
+# merge the info about AGOUTY_ID and 5kb read depth
+# window_fold_change_spread_no0$contig_rank <- bruniquel_contig_coverage_ordered$contig_rank[match(window_fold_change_spread_no0$contig,
+#                                                                               bruniquel_contig_coverage_ordered$contig)]
+window_fold_change_spread_no0$AGOUTY_ID <- as.character(nonpolymorphic_75_man_agouti_df$AGOUTY_ID[match(window_fold_change_spread_no0$contig, nonpolymorphic_75_man_agouti_df$SNP_short_name)])
+
+# if the agouti id is NA, add the name of the contig
+window_fold_change_spread_no0$AGOUTY_ID[is.na(window_fold_change_spread_no0$AGOUTY_ID)] <- window_fold_change_spread_no0$contig[is.na(window_fold_change_spread_no0$AGOUTY_ID)]
+
+# assign new factor to AGOUTI
+# ggplot default level is alphabetical - here we want by decreasing size length
+window_fold_change_spread_no0$AGOUTY_ID <- factor(window_fold_change_spread_no0$AGOUTY_ID,
+                                                  levels = unique(window_fold_change_spread_no0$AGOUTY_ID))
+
+# order the windows in the AGOUTI order
+window_fold_change_spread_no0$window <- factor(window_fold_change_spread_sorted$window,
+                                               levels = unique(window_fold_change_spread_no0$AGOUTY_ID))
+
+# set number of contigs
+num_contig <- length(unique(window_fold_change_spread_no0$contig))
+
+
+# plot the result simply (dots)
+# x = windows
+# y = log fold change
+xaxis_label <- "5kb windows (ordered by decreasing contig length)"
+yaxis_label <- "Read Depth Fold Change"
+
+# plot the result simply (dots)
+window_fold_change_spread_no0 %>%
+  #tail(10) %>%
+  ggplot(aes(x = window,
+             y = read_log2_fold_change,
+             colour = as.factor(AGOUTY_ID))) +
+    geom_point(alpha = 0.4, size = 0.4) +
+    scale_color_manual(values = rep(c("grey", "black"), num_scaff)) +
+    scale_fill_manual(values = rep(c("grey", "black"), num_scaff)) +
+      labs(x = xaxis_label, y = yaxis_label) +
+      theme(legend.position = "none") +
+      theme(panel.background = element_rect(fill = "transparent"),
+         plot.background = element_rect(fill = "transparent", color = NA),
+           panel.grid.major = element_blank(),
+           panel.grid.minor = element_blank(),
+           axis.ticks.x     = element_blank(),
+           #axis.text.x      = element_text(size = 3, angle = 45, hjust = 1),
+         axis.text.x      =   element_blank(),
+         axis.title.x     = element_text(size = 12),
+           axis.title.y     = element_text(size = 12),
+         panel.border     = element_rect(colour = "black", fill = NA, size = 0.5)) +
+  expand_limits(y = c(-3, 2))
+
+# then arrange colour for contig belonging
+
+# more things?
+
+```
+
+```{r the rest}
+# plot otheriwse
+
+
+
+
+
+# make 2 vectors with adjusted P value from KS test of read depth bet M and P
+ks_padj_df <- data.frame(
+  ks_padj = c(ks_test_df_sorted$padj[ks_test_df_sorted$enrichment == "enriched_in_M"],
+             ks_test_df_sorted$padj[ks_test_df_sorted$enrichment == "enriched_in_P"]),
+  social = c(rep("M", times = length(ks_test_df_sorted$padj[ks_test_df_sorted$enrichment == "enriched_in_M"])),
+             rep("P", times = length(ks_test_df_sorted$padj[ks_test_df_sorted$enrichment == "enriched_in_P"])))
+)
+
+head(ks_padj_df)
+tail(ks_padj_df)
+
+png(filename = "figure-3b_ks_padj_mean-normalised-read-depth.png")
+
+# plot Basic boxplot
+boxplot(ks_padj_df$ks_padj ~ ks_padj_df$social,
+        range = 0,
+        col = c("white", "grey"),
+        #log = "y",
+        xlab = "",
+        ylab = "ks_padj_mean-normalised-read-depth",
+        names = c("single-queen", "multiple-queen"))
+
+# obtain levels
+ks_padj_df$social <- factor(ks_padj_df$social, levels = c("M", "P"))
+mylevels <- levels(ks_padj_df$social)
+
+# obtain M and P proportion
+levelProportions <- summary(ks_padj_df$social) / nrow(ks_padj_df)
+
+# for each social type
+for(i in 1:length(mylevels)){
+  
+  thislevel <- mylevels[i]
+  
+  thisvalues <- ks_padj_df[ks_padj_df$social==thislevel, "ks_padj"]
+  
+  # take the x-axis indices and add a jitter, proportional to the N in each level
+  myjitter <- jitter(rep(i, length(thisvalues)), amount=levelProportions[i]/2)
+  
+  points(myjitter,
+         thisvalues,
+         pch = 20,
+         col = rgb(0,0,0,.9)) 
+  
+}
+
+# save for MS
+dev.off()
+
+# save for MS
+ggsave(filename = "figure3b_coverageplot.png", width = 4, height = 4, dpi = 600, bg = "transparent")
+```
+
+```{r record versions of session, eval = TRUE, echo = FALSE, include = FALSE}
+# record versions of R and packages here
+sessionInfo()
+# R version 3.6.3 (2020-02-29)
+# Platform: x86_64-apple-darwin15.6.0 (64-bit)
+# Running under: macOS Catalina 10.15.4
+# 
+# Matrix products: default
+# BLAS:   /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+# LAPACK: /Library/Frameworks/R.framework/Versions/3.6/Resources/lib/libRlapack.dylib
+# 
+# locale:
+# [1] en_GB.UTF-8/en_GB.UTF-8/en_GB.UTF-8/C/en_GB.UTF-8/en_GB.UTF-8
+# 
+# attached base packages:
+# [1] stats     graphics  grDevices utils     datasets  methods   base     
+# 
+# other attached packages:
+#  [1] PopGenome_2.7.5    ff_4.0.2           bit_4.0.4          pegas_0.13         adegenet_2.1.3     ade4_1.7-15       
+#  [7] ape_5.4            hierfstat_0.5-7    harmonicmeanp_3.0  FMStable_0.1-2     viridis_0.5.1      viridisLite_0.3.0 
+# [13] LDheatmap_0.99-7   forcats_0.5.0      stringr_1.4.0      purrr_0.3.4        tibble_3.0.3       tidyverse_1.3.0   
+# [19] readr_1.3.1        plyr_1.8.6         reshape2_1.4.4     RColorBrewer_1.1-2 colorspace_1.4-1   ggrepel_0.8.2     
+# [25] dplyr_1.0.1        calibrate_1.7.7    MASS_7.3-51.6      gridExtra_2.3      qqman_0.1.4        tidyr_1.1.1       
+# [31] ggplot2_3.3.2 
+# 
+# loaded via a namespace (and not attached):
+#  [1] seqinr_3.6-1       deldir_0.1-28      ellipsis_0.3.1     class_7.3-17       fs_1.5.0           rstudioapi_0.11   
+#  [7] farver_2.0.3       fansi_0.4.1        lubridate_1.7.9    xml2_1.3.2         codetools_0.2-16   splines_3.6.3     
+# [13] knitr_1.29         jsonlite_1.7.0     broom_0.7.0        cluster_2.1.0      dbplyr_1.4.4       shiny_1.5.0       
+# [19] compiler_3.6.3     httr_1.4.2         backports_1.1.8    assertthat_0.2.1   Matrix_1.2-18      fastmap_1.0.1     
+# [25] cli_2.0.2          later_1.1.0.1      htmltools_0.5.0    tools_3.6.3        igraph_1.2.5       coda_0.19-3       
+# [31] gtable_0.3.0       glue_1.4.1         gmodels_2.18.1     Rcpp_1.0.5         cellranger_1.1.0   raster_3.3-13     
+# [37] vctrs_0.3.2        spdep_1.1-5        gdata_2.18.0       nlme_3.1-148       xfun_0.16          rvest_0.3.6       
+# [43] mime_0.9           lifecycle_0.2.0    gtools_3.8.2       LearnBayes_2.15.1  scales_1.1.1       hms_0.5.3         
+# [49] promises_1.1.1     parallel_3.6.3     expm_0.999-5       stringi_1.4.6      e1071_1.7-3        permute_0.9-5     
+# [55] boot_1.3-25        spData_0.3.8       rlang_0.4.7        pkgconfig_2.0.3    lattice_0.20-41    sf_0.9-5          
+# [61] labeling_0.3       tidyselect_1.1.0   magrittr_1.5       R6_2.4.1           generics_0.0.2     DBI_1.1.0         
+# [67] pillar_1.4.6       haven_2.3.1        withr_2.2.0        mgcv_1.8-31        units_0.6-7        sp_1.4-2          
+# [73] modelr_0.1.8       crayon_1.3.4       KernSmooth_2.23-17 utf8_1.1.4         grid_3.6.3         readxl_1.3.1      
+# [79] blob_1.2.1         vegan_2.5-6        reprex_0.3.0       digest_0.6.25      classInt_0.4-3     xtable_1.8-4      
+# [85] httpuv_1.5.4       munsell_0.5.0     
+```
