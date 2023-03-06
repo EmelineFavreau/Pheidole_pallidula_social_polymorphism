@@ -1,0 +1,120 @@
+# find the data available for PLINK LD
+# the dataset used for GWAS: number of SNPs (n=121,786) and number of significant SNPS (n=48)
+# across population
+# as per ~/Pheidole_pallidula_social_polymorphism/05-population_genetics_analysis/03-association_tests/01-filtering-and-PCA/WHATIDID.txt
+
+~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf
+
+# list of 48 SNPs
+~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/2021-03-02-sig_48_snp_vec
+
+# list of random SNPs
+bcftools view --no-header ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf | cut -f 3 | grep -v -f input/fortyeightsnps.txt | shuf -n 48 - > tmp/random-snps-list
+
+# set research directory
+mkdir ~/2023-02-LD
+mkdir input; result; tmp   
+
+# test small version of the analysis 1
+module load plink/1.9-170906
+module load bcftools # version 1.16
+module load vcftools/0.1.16
+
+# from vcf to bfile
+
+#########################################
+# linkage disequilibrium test
+# a random SNP: contig_1_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:176A,G
+# remove the pilon strings
+# remove the semi colons and the comma
+cp ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/2020-05-04-108samples-maf005-NOmonomorphic-75support.recode.vcf ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf
+
+sed -i "s/_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:/_/g" ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf
+
+sed -i "s/_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon//g" ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf
+
+# testing the simplest test: LD between two SNPs (random pick)
+plink --vcf ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf --allow-extra-chr --allow-no-sex --ld contig_1_176A,G contig_1_907C,G
+
+# result: R-sq = 0.000513611    D' = 0.151515
+# both very close to 0, a random association
+
+
+
+# testing the alternative simplest test: LD between two SNPs (both part of 48 SNPs)
+plink --vcf ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf --allow-extra-chr --allow-no-sex --ld contig_100_368279A,G contig_1018_244269G,T
+
+# r R-sq = 0.412073       D' = 0.700153
+# both closer to 1, a association
+
+# nice, now can I have a table of all sig SNPs with R2 and D prime?
+cut -d " " -f 2 ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/2021-03-02-sig_48_snp_vec | sed "s/_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon_pilon:/_/g"  > input/fortyeightsnps.txt
+
+# for n = 48, I expect 1128 entries (because sum(1:(n-1)) )
+# I need to filter the input for just those SNPs, and then get a triangle r2 HERE
+plink --vcf ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf --allow-extra-chr --allow-no-sex --ld-snp-list input/fortyeightsnps.txt --r2 dprime  --ld-window-r2 0 --ld-window 99999 --ld-window-kb 10000 --out tmp/test-ld-sig-matrix-analysis
+
+# but there are only 69 pairwise comparisons above 0.2
+wc -l tmp/test-ld-sig-matrix-analysis.ld 
+
+# how does this compare to a list of random SNPs?
+plink --vcf ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf --allow-extra-chr --allow-no-sex --ld-snp-list tmp/random-snps-list --r2 dprime --ld-window-r2 0 --out tmp/test-ld-random-matrix-analysis
+
+# but there are only 69 pairwise comparisons above 0.2
+wc -l tmp/test-ld-random-matrix-analysis.ld # 110
+
+
+#########################################
+# Filtering VCF for only 48 SNPs
+
+#  Each line of the input file should contain a (tab-separated) chromosome and position
+cp input/fortyeightsnps.txt input/chrom_pos_fortyeightsnps.txt
+
+# Chrom
+sed "s/_[0-9]*[A-Z],[A-Z]//g" input/fortyeightsnps.txt > tmp/chrom_fortyeightsnps.txt
+
+# position
+cut -d "_" -f 3 input/fortyeightsnps.txt | sed "s/[A-Z],[a-Z]//g" > tmp/pos_fortyeightsnps.txt
+
+paste tmp/chrom_fortyeightsnps.txt tmp/pos_fortyeightsnps.txt > input/chrom_pos_fortyeightsnps.txt
+
+vcftools --vcf ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf --positions input/chrom_pos_fortyeightsnps.txt --recode --recode-INFO-all --out tmp/fortyEightSNPs
+
+# calculate r2 and for all 48 SNPs
+plink --vcf tmp/fortyEightSNPs.recode.vcf --allow-extra-chr --allow-no-sex --r2 triangle --out tmp/test-ld-48-only-sig-analysis-triangle
+
+#############
+# create 100 lists of random SNPs using R
+bcftools view --no-header ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf | cut -f 1 > tmp/allchrom
+
+bcftools view --no-header ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf | cut -f 3 |  sed "s/contig_[0-9]*_//g" | sed "s/[A-Z],[A-Z]//g"  > tmp/allpos
+
+paste tmp/allchrom tmp/allpos > tmp/allsnpChromPos
+
+
+for i in {1..100}
+do
+   Rscript LD-analyses.R $i
+
+done
+
+# calculate r2 and for all 100 sets of 48 random SNPs
+for i in {1..100}
+do 
+      vcftools --vcf ~/2019-03-05-association_analysis_flye_assembly/result/2019-03-08-109samples-maf10percent/result/official_set_shorter_name.recode.vcf --positions tmp/random48snps$i --recode --recode-INFO-all --out tmp/fortyEightSNPs$i
+      plink --vcf tmp/fortyEightSNPs$i.recode.vcf --allow-extra-chr --allow-no-sex --r2 triangle --out tmp/test-ld-48-random-analysis-triangle-$i
+done
+
+ls tmp/test-ld-48-random-analysis-triangle-*.ld
+
+# reshape result into one column text file
+for i in {1..100}
+do 
+      sed -i "s/\t/\n/g" tmp/test-ld-48-random-analysis-triangle-$i.ld
+done
+
+
+# save results into a dataframe for R (aim to make a plot and summary stat)
+ls tmp/test-ld-48-*-analysis-triangle-*.ld # 100 instances of 48 '1' need to be removed
+cat tmp/test-ld-48-*-analysis-triangle-*.ld > tmp/test-ld-48-random-analysis-triangle-contat100.ld
+sed "s/\t/\n/g" tmp/test-ld-48-only-sig-analysis-triangle.ld > test-ld-48-only-sig-analysis-triangle-concat.ld

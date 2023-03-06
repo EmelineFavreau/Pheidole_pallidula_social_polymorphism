@@ -1,0 +1,112 @@
+# BLAST Solenopsis and Formica supergene sequences against Pheidole genome
+# Hypothesis: supergene sequences match Pheidole sequences of those 48 SNPs
+# Alternative hypothesis: Pheidole SNPs are unrelated to gene content of known supergenes
+
+# Step 1: locate data
+
+
+# version gnG has genetic_map with supergene metadata
+# get solenopsis gng fasta
+cd input
+
+wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/188/075/GCF_000188075.1_Si_gnG/GCF_000188075.1_Si_gnG_genomic.fna.gz
+
+gzip -d GCF_000188075.1_Si_gnG_genomic.fna.gz
+
+# obtain regions of gng that are supergene
+ln -s /data1/archive/archive-SBCS-WurmLab/db/annotations/S_invicta/2017-01-supergene/gng_regions.tab .
+
+# obtain a bed file of the supergene regions
+grep "supergene" gng_regions.tab | cut -d " " -f 1,2,3 > gng_regions_supergene.BED
+
+# make a fasta of only the solenopsis supergene
+seqtk subseq input/GCF_000188075.1_Si_gnG_genomic.fna input/gng_regions_supergene.BED > tmp/solenopsis-supergene.fasta
+
+
+
+# chromosome 3 has the SNPs in Formica selysi
+wget ftp.ncbi.nlm.nih.gov/genomes/all/GCA/009/859/135/GCA_009859135.1_ASM985913v1/GCA_009859135.1_ASM985913v1_genomic.fna.gz
+
+gzip -d  GCA_009859135.1_ASM985913v1_genomic.fna.gz
+
+# make a fasta of only the solenopsis supergene
+echo "CM020807.1 Formica selysi isolate DE90_pool_M chromosome 3, whole genome shotgun sequence" > selysi-supergene.list
+seqtk subseq input/GCA_009859135.1_ASM985913v1_genomic.fna input/selysi-supergene.list > tmp/selysi-supergene.fasta
+
+cd input; wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/188/075/GCF_000188075.1_Si_gnG/GCF_000188075.1_Si_gnG_genomic.gff.gz
+gzip -d GCF_000188075.1_Si_gnG_genomic.gff.gz
+
+
+
+# link the genome assembly of pheidole
+ln -s /data/home/btx077/db/genomic/Pheidole_pallidula/2019-03-05-Ppal_E/Ppal_E.fasta .
+
+# link the bed file of pheidole 48 snps
+cp /data1/home/btx077/2023-02-LD/input/chrom_pos_fortyeightsnps.txt pheidole48.contig.loc
+
+# add "Ppal_E." to each scaffold name
+sed -i "s/contig/Ppal_E.contig/g" pheidole48.contig.loc
+
+# add a third column
+cut -f 2 pheidole48.contig.loc > pheidole48.loc
+
+paste pheidole48.contig.loc pheidole48.loc >  pheidole48.BED
+
+
+# Step 2: make a blast database for pheidole_genome.fasta
+# make the database
+module load blast+
+
+makeblastdb -dbtype nucl -title Ppallidula \
+      -in input/Ppal_E.fasta \
+      -parse_seqids \
+      -out Ppallidula
+
+
+# Step 3: blast selysi against pheidole
+blastn -query tmp/selysi-supergene.fasta \
+    -db Ppallidula \
+    -outfmt 6 \
+    -out result/2023-03-02-selysi-supergene-agst-Ppallidula-blastn-output  \
+    -evalue 1e-5 \
+    -max_target_seqs 1
+
+
+# Step 4: wrangle output format 6 into a bed of target (pheidole); bedtools intersect
+cut -f 2,7,8 result/2023-03-02-selysi-supergene-agst-Ppallidula-blastn-output > tmp/sel-supergene-match-in-ppal.BED
+
+bedtools intersect -a input/pheidole48.BED -b tmp/sel-supergene-match-in-ppal.BED
+
+# 0 of the 48 SNPs is in the supergene of selysi invicta: 
+
+
+
+# Step 3: blast solenopsis against pheidole
+blastn -query tmp/solenopsis-supergene.fasta \
+    -db Ppallidula \
+    -outfmt 6 \
+    -out result/2023-03-02-solenopsis-supergene-agst-Ppallidula-blastn-output  \
+    -evalue 1e-5 \
+    -max_target_seqs 1
+
+
+# Step 4: wrangle output format 6 into a bed of target (pheidole); bedtools intersect
+cut -f 2,7,8 result/2023-03-02-solenopsis-supergene-agst-Ppallidula-blastn-output > tmp/sol-supergene-match-in-ppal.BED
+
+bedtools intersect -a input/pheidole48.BED -b tmp/sol-supergene-match-in-ppal.BED
+
+# one of the 48 SNPs is in the supergene of Solenopsis invicta: Ppal_E.contig_1562	745202
+NW_011795053.1:194288-1052406	Ppal_E.contig_1562	81.063	1167	147	33	395005	396130	745729	744596	0.0	863
+grep "Ppal_E.contig_1562" input/pheidole48.BED   > tmp/sig-snp-sol.bed
+cut -f 2,7,8 result/2023-03-02-solenopsis-supergene-agst-Ppallidula-blastn-output
+
+
+# Step 5: conclude for solenopsis and selysi
+# The 48 SNPs (associated with queen number) are not in regions with sequence similarity to Formica selysi (e.g. no BLAST match on Pheidole SNP regions with query Formica selysi chromosome 3 against target Pheidole pallidula). Only one SNP matches a Solenopsis invicta supergene region: on the invicta gene named "" (NW_011795053.1:194288-1052406 395005	396130)
+echo "NW_011795053.1 Solenopsis invicta unplaced genomic scaffold, Si_gnG Si_gnG.scaffold00899, whole genome shotgun sequence	395005	396130" > tmp/solenopsis-supergene-pheidole-snp.BED
+
+bedtools intersect -a tmp/solenopsis-supergene-pheidole-snp.BED -b input/GCF_000188075.1_Si_gnG_genomic.gff
+
+# no hit, but close to LOC105206549: wolframin
+grep "NW_011795053.1" input/GCF_000188075.1_Si_gnG_genomic.gff | awk '$3="gene" {print $0}' | awk '$4 > 394000 {print $0}' | awk '$4 < 397130 {print $0}'
+
