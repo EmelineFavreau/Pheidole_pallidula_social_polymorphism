@@ -95,10 +95,56 @@ cut -f 2,7,8 result/2023-03-02-solenopsis-supergene-agst-Ppallidula-blastn-outpu
 
 bedtools intersect -a input/pheidole48.BED -b tmp/sol-supergene-match-in-ppal.BED
 
-# one of the 48 SNPs is in the supergene of Solenopsis invicta: Ppal_E.contig_1562	745202
-NW_011795053.1:194288-1052406	Ppal_E.contig_1562	81.063	1167	147	33	395005	396130	745729	744596	0.0	863
-grep "Ppal_E.contig_1562" input/pheidole48.BED   > tmp/sig-snp-sol.bed
-cut -f 2,7,8 result/2023-03-02-solenopsis-supergene-agst-Ppallidula-blastn-output
+
+
+# add 500 on each side of the SNPs
+awk -v s=500 '{print $1, $2-s, $3+s}' input/pheidole48.BED | sed "s/ /\t/g" > input/pheidole48-500updown.BED
+
+# check for invalid negative (one contig starts should be 0)
+less input/pheidole48-500updown.BED
+
+# create a bed file of blast hit from Sinv to Ppal
+cut -f 2,7,8 result/2023-03-02-solenopsis-supergene-agst-Ppallidula-blastn-output > tmp/sol-supergene-match-in-ppal.BED
+
+# create a bed file of blast hit from Fsel to Ppal
+cut -f 2,7,8 result/2023-03-02-selysi-supergene-agst-Ppallidula-blastn-output > tmp/sel-supergene-match-in-ppal.BED
+
+# check for intersection; no hit
+bedtools intersect -a input/pheidole48-500updown.BED -b tmp/sel-supergene-match-in-ppal.BED
+
+# check for intersection; two hits
+bedtools intersect -a input/pheidole48-500updown.BED -b tmp/sol-supergene-match-in-ppal.BED
+
+Ppal_E.contig_100	368681	368779 # contig_100:368279
+Ppal_E.contig_100	367779	368063
+Ppal_E.contig_1562	744702	745483 # contig_1562:745202 
+
+# list of contig with hits
+bedtools intersect -a input/pheidole48-500updown.BED -b tmp/sol-supergene-match-in-ppal.BED | cut -f 1 > tmp/sig-snp-sol.contig
+
+grep -f tmp/sig-snp-sol.contig input/pheidole48-500updown.BED > tmp/sig-snp-sol.bed
+
+# find coordinate of best hit (evalue = 0, max bitscore)
+grep "Ppal_E.contig_100" result/2023-03-02-solenopsis-supergene-agst-Ppallidula-blastn-output | awk '$11="0.0" {print $0}' | awk '$12 > 5000 {print $0}' | cut -d " "  -f 7,8
+
+715640 721795
+
+
+# two Sinv regions with Ppal SNPs hits
+NW_011794623.1:2-3037
+NW_011794844.1:2-1251831
+
+# unknown gene
+grep "NW_011794623.1" input/GCF_000188075.1_Si_gnG_genomic.gff | awk '$3="gene" {print $0}' 
+##sequence-region NW_011794623.1 gene 3037
+NW_011794623.1 RefSeq gene 1 3037 . + . ID=id5545;Dbxref=taxon:13686;Name=Unknown;chromosome=Unknown;country=USA: Georgia;gbkey=Src;genome=genomic;genotype=Gp-9 big B;mol_type=genomic DNA;sex=male
+
+# gene=LOC105199580;product=vacuolar protein sorting-associated protein 13B
+grep "NW_011794844.1" input/GCF_000188075.1_Si_gnG_genomic.gff | awk '$3="gene" {print $0}' | awk '$2="RefSeq" {print $0}' | awk '$5 < 721800 {print $0}' | awk '$4 > 715600 {print $0}' 
+
+
+
+
 
 
 # Step 5: conclude for solenopsis and selysi
