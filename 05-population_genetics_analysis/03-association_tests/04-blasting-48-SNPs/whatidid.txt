@@ -156,3 +156,73 @@ bedtools intersect -a tmp/solenopsis-supergene-pheidole-snp.BED -b input/GCF_000
 # no hit, but close to LOC105206549: wolframin
 grep "NW_011795053.1" input/GCF_000188075.1_Si_gnG_genomic.gff | awk '$3="gene" {print $0}' | awk '$4 > 394000 {print $0}' | awk '$4 < 397130 {print $0}'
 
+
+
+#### tblastn to find hits close to proteins of supergene
+# aim of analysis: BLAST, against Solenopsis and Formica, the Pheidole coding-genes that are nearest to the 48 SNPs
+
+# Step 1: take the supergene protein sequences from Solenopsis, and tblastn against the entire pheidole genome. Keep only the best HSP for each protein query. Output as tab-delimited table.
+
+mkdir 2023-10-tblast
+cd 2023-10-tblast
+mkdir input tmp result
+cd input
+
+# obtain the bed file of 48 SNPs of Pheidole
+ln -s ~/2023-03-blast/input/pheidole48.BED .
+
+# obtain the supergene proteins of Solenopsis (Consensus amino acid sequence of 403 protein-coding genes in the SB variant of the fire ant Solenopsis invicta social chromosome supergene, from https://datadryad.org/stash/dataset/doi:10.5061/dryad.js509):
+rsync -Pav -e "ssh -i ~/.ssh/apocrita_id_rsa" consensus-bb.cds.fa btx077@login.hpc.qmul.ac.uk:/data2/home/btx077/2023-10-tblast/input/.
+
+
+# get Pheidole whole genome
+ln -s ~/2023-03-blast/input/Ppal_E.fasta .
+
+cd ..
+
+
+# make a database for blast
+module load blast+
+makeblastdb -dbtype nucl -title Ppallidula \
+      -in input/Ppal_E.fasta \
+      -parse_seqids \
+      -out Ppallidula
+
+# on tmux
+tblastn -query input/consensus-bb.cds.fa \
+    -db Ppallidula \
+    -outfmt 6 \
+    -out result/2023-10-05-Sinv-supergene-agst-Ppallidula-tblastn-output  \
+    -max_hsps 1
+
+wc -l result/2023-10-05-Sinv-supergene-agst-Ppallidula-tblastn-output  # 6205
+
+
+
+
+# Step 2: subset the output file to only include pheidole_contig (column 2, sseqid), pheidole_start (column 9, sstart), pheidole_end (column 10, send), and solenopsis_prot_id (column 1, qseqid).
+awk '{print $2 "\t" $9 "\t" $10 "\t" $1}' result/2023-10-05-Sinv-supergene-agst-Ppallidula-tblastn-output > tmp/2023-10-05_Ppal-id_Ppal-start_Ppal-end_Sinv-supergene-prot-id
+
+
+# 3083 hits map on the other strand of Pheidole (ie start > end)
+
+awk '{
+if ($2 <= $3)
+	print $0;
+}' tmp/2023-10-05_Ppal-id_Ppal-start_Ppal-end_Sinv-supergene-prot-id > tmp/2023-10-05_Ppal-id_Ppal-start_Ppal-end_Sinv-supergene-prot-id.same.strand
+
+
+
+# Step 3: check (e.g., with bedtools merge -d 25000: merge overlapping features between files, allowing one source to have merged features if they are less than 25,000bp apart) whether any of the 48 SNPs you identified are near any of the hits to Solenopsis genes.
+module load bedtools
+sort -k1,1 -k2,2n tmp/2023-10-05_Ppal-id_Ppal-start_Ppal-end_Sinv-supergene-prot-id.same.strand > tmp/2023-10-05_Ppal-id_Ppal-start_Ppal-end_Sinv-supergene-prot-id.same.strand.sorted.bed
+
+bedtools merge -d 25000 -i tmp/2023-10-05_Ppal-id_Ppal-start_Ppal-end_Sinv-supergene-prot-id.same.strand.sorted.bed > tmp/2023-10-05_Ppal-id_Ppal-start_Ppal-end_Sinv-supergene-prot-id.merged
+
+# print 48 SNPs that overlap with Ppal found in Sinv supergene
+bedtools intersect -wa -wb -a input/pheidole48.BED -b tmp/2023-10-05_Ppal-id_Ppal-start_Ppal-end_Sinv-supergene-prot-id.merged -filenames
+
+Ppal_E.contig_1689	1642	1642	Ppal_E.contig_1689	982	27557	closest to XM_011158527.1 (SNP is 364 bases downstream of XM_011158527.1)
+Ppal_E.contig_1713	286180	286180	Ppal_E.contig_1713	281221	308106	closest to XM_011171523.1  (SNP is 4,432 bases downstream of XM_011171523.1)
+Ppal_E.contig_500	688305	688305	Ppal_E.contig_500	684993	711618 closest to XM_011163068.1  686920	687072 (SNP is 1,233 bases downstream of XM_011163068.1)
+
